@@ -55,9 +55,11 @@ final class SafetyRoutingTests: XCTestCase {
         XCTAssertEqual(seen, actions)
 
         let events = await engine.runEvents()
-        XCTAssertEqual(events.count, actions.count)
-        XCTAssertTrue(events.allSatisfy { $0.result == .completed })
-        XCTAssertEqual(events.map(\.actionKind), ["scroll", "pageNavigate", "wait"])
+        // steps + focusRestore
+        XCTAssertEqual(events.count, actions.count + 1)
+        XCTAssertTrue(events.dropLast().allSatisfy { $0.result == .completed })
+        XCTAssertEqual(events.dropLast().map(\.actionKind), ["scroll", "pageNavigate", "wait"])
+        XCTAssertEqual(events.last?.actionKind, "focusRestore")
         XCTAssertTrue(events.allSatisfy { $0.targetBundleID == "com.example.app" })
     }
 
@@ -100,5 +102,6 @@ final class SafetyRoutingTests: XCTestCase {
         XCTAssertEqual(log.count, 0)
         let events = await engine.runEvents()
         XCTAssertEqual(events.first?.result, .denied)
+        XCTAssertEqual(events.last?.actionKind, "focusRestore")
     }
 }

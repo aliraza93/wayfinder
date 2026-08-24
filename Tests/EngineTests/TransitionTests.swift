@@ -47,8 +47,8 @@ final class TransitionTests: XCTestCase {
         XCTAssertEqual(log[1].action, .pageNavigate(.pageDown))
 
         let events = await engine.runEvents()
-        XCTAssertEqual(events.map(\.result), [.completed, .completed])
-        XCTAssertEqual(events.map(\.actionKind), ["scroll", "pageNavigate"])
+        XCTAssertEqual(events.map(\.result), [.completed, .completed, .completed])
+        XCTAssertEqual(events.map(\.actionKind), ["scroll", "pageNavigate", "focusRestore"])
         XCTAssertTrue(events.allSatisfy { $0.targetBundleID == "com.example.app" })
     }
 
@@ -83,6 +83,7 @@ final class TransitionTests: XCTestCase {
         let state = await engine.state
         XCTAssertEqual(state, .idle)
         let events = await engine.runEvents()
-        XCTAssertEqual(events.last?.result, .failed)
+        XCTAssertEqual(events.first?.result, .failed)
+        XCTAssertEqual(events.last?.actionKind, "focusRestore")
     }
 }

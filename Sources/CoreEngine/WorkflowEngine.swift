@@ -4,29 +4,39 @@ import Observability
 import Safety
 
 /// Sequencer / state machine. Routes every action through `SafetyPolicy` before execution.
+/// Recovery: TOCTOU probe, capped retries, typed errors, focus restore at stop.
 public actor WorkflowEngine {
     public private(set) var state: EngineState = .idle
     public private(set) var lastStepPhase: StepPhase = .pending
     public private(set) var iterationsCompleted: Int = 0
+    /// Last recovery message (content-free), e.g. "couldn't restore focus".
+    public private(set) var lastRecoveryMessage: String?
+    public private(set) var focusRestoreResult: FocusRestoreResult?
 
     private let safety: SafetyPolicy
     private let executor: ActionExecutor
     private let sovereignty: UserSovereigntySignal
     private let timing: TimingPolicy
     private let recorder: RunRecorder
+    private let preconditionProbe: any RunPreconditionProbe
+    private let focusRestorer: any FocusRestorer
 
     public init(
         safety: SafetyPolicy = SafetyPolicy(),
         executor: ActionExecutor,
         sovereignty: UserSovereigntySignal,
         timing: TimingPolicy,
-        recorder: RunRecorder = RunRecorder()
+        recorder: RunRecorder = RunRecorder(),
+        preconditionProbe: any RunPreconditionProbe = AlwaysReadyProbe(),
+        focusRestorer: any FocusRestorer = NullFocusRestorer()
     ) {
         self.safety = safety
         self.executor = executor
         self.sovereignty = sovereignty
         self.timing = timing
         self.recorder = recorder
+        self.preconditionProbe = preconditionProbe
+        self.focusRestorer = focusRestorer
     }
 
     public func runEvents() -> [RunEvent] {
@@ -55,6 +65,9 @@ public actor WorkflowEngine {
     /// Runs a workflow to completion (or stop/error). Deterministic under a fake clock.
     public func run(_ workflow: Workflow) async {
         guard state == .idle else { return }
+        lastRecoveryMessage = nil
+        focusRestoreResult = nil
+
         guard let target = workflow.targets.first else {
             state = .error("workflow has no targets")
             await transitionToIdleViaStopping()
@@ -88,7 +101,6 @@ public actor WorkflowEngine {
             for step in workflow.steps {
                 if state == .stopping || state == .paused {
                     if state == .paused {
-                        // Wait until resumed or halt (tests resume synchronously).
                         while state == .paused {
                             if await sovereignty.shouldHalt() {
                                 state = .stopping
@@ -110,7 +122,11 @@ public actor WorkflowEngine {
                 let outcome = await executeStep(step, target: target)
                 switch outcome {
                 case .aborted:
-                    state = .error("step aborted")
+                    if lastRecoveryMessage == nil {
+                        state = .error("step aborted")
+                    } else {
+                        state = .error(lastRecoveryMessage!)
+                    }
                     break outer
                 case .completed, .skipped, .denied, .failed:
                     continue
@@ -124,6 +140,19 @@ public actor WorkflowEngine {
             }
         }
 
+        await finishWithFocusRestore(targetBundleID: target.bundleID)
+    }
+
+    private func finishWithFocusRestore(targetBundleID: String) async {
+        let restore = await focusRestorer.restoreFocus(to: targetBundleID)
+        focusRestoreResult = restore
+        switch restore {
+        case .restored:
+            recordMeta(actionKind: "focusRestore", targetBundleID: targetBundleID, result: .completed)
+        case .couldNotRestore:
+            lastRecoveryMessage = "couldn't restore focus"
+            recordMeta(actionKind: "focusRestore", targetBundleID: targetBundleID, result: .failed)
+        }
         await transitionToIdleViaStopping()
     }
 
@@ -142,27 +171,19 @@ public actor WorkflowEngine {
 
     private func executeStep(_ step: Step, target: TargetApp) async -> StepOutcome {
         lastStepPhase = .pending
-        var retriesLeft = step.retryPolicy.maxRetries
+        var retriesLeft = Recovery.cappedRetries(requested: step.retryPolicy.maxRetries)
 
         while true {
             lastStepPhase = .validating
             let decision = safety.validate(action: step.action, target: target)
             switch decision {
             case .deny(let reason):
+                // Forbidden — never swallow, never skip/retry past the safety gate.
                 record(action: step.action, target: target, result: .denied)
-                _ = reason
                 lastStepPhase = .failed
-                let outcome = StepLifecycle.nextAction(onError: step.onError, retriesRemaining: retriesLeft)
-                if outcome == .failed && retriesLeft > 0 {
-                    retriesLeft -= 1
-                    continue
-                }
-                if step.onError == .skip {
-                    record(action: step.action, target: target, result: .skipped)
-                    lastStepPhase = .completed
-                    return .skipped
-                }
-                return outcome == .aborted ? .aborted : .denied
+                lastRecoveryMessage = reason
+                await sovereignty.noteUserIntervention()
+                return .aborted
 
             case .allow:
                 break
@@ -172,10 +193,16 @@ public actor WorkflowEngine {
             do {
                 if case .wait(let seconds) = step.action {
                     let start = timing.clock.now
-                    _ = await timing.wait(timeoutSeconds: seconds) {
+                    let budget = min(seconds, step.timeoutSeconds)
+                    let finished = await timing.wait(timeoutSeconds: budget) {
                         timing.clock.now.timeIntervalSince(start) >= seconds
                     }
+                    if !finished {
+                        throw TimeoutError("wait exceeded timeout (\(step.timeoutSeconds)s)")
+                    }
                 } else {
+                    // TOCTOU: re-assert focus / permission immediately before the event.
+                    try await preconditionProbe.assertReady(for: target)
                     try await executor.execute(action: step.action, target: target)
                 }
                 lastStepPhase = .settling
@@ -188,12 +215,27 @@ public actor WorkflowEngine {
                 return .completed
             } catch {
                 lastStepPhase = .failed
+                let kind = Recovery.classify(error)
+                lastRecoveryMessage = kind.message
                 record(action: step.action, target: target, result: .failed)
-                let outcome = StepLifecycle.nextAction(onError: step.onError, retriesRemaining: retriesLeft)
-                if outcome == .failed && retriesLeft > 0 {
+
+                if kind.mustAbort {
+                    // Permission / forbidden — stop immediately; never skip.
+                    await sovereignty.noteUserIntervention()
+                    return .aborted
+                }
+
+                if case .precondition = kind {
+                    // Focus change / Secure Input / AX loss → treat as intervention → stop.
+                    await sovereignty.noteUserIntervention()
+                    return .aborted
+                }
+
+                if Recovery.shouldRetry(kind: kind, onError: step.onError, retriesRemaining: retriesLeft) {
                     retriesLeft -= 1
                     continue
                 }
+
                 if step.onError == .skip {
                     record(action: step.action, target: target, result: .skipped)
                     lastStepPhase = .completed
@@ -205,11 +247,19 @@ public actor WorkflowEngine {
     }
 
     private func record(action: ActionKind, target: TargetApp, result: RunEventResult) {
+        recordMeta(
+            actionKind: ActionKindLabel.label(for: action),
+            targetBundleID: target.bundleID,
+            result: result
+        )
+    }
+
+    private func recordMeta(actionKind: String, targetBundleID: String, result: RunEventResult) {
         recorder.append(
             RunEvent(
                 timestamp: timing.clock.now,
-                actionKind: ActionKindLabel.label(for: action),
-                targetBundleID: target.bundleID,
+                actionKind: actionKind,
+                targetBundleID: targetBundleID,
                 result: result
             )
         )

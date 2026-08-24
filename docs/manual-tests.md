@@ -173,3 +173,22 @@ Notes / observed results:
 
 - _(fill after live UI run)_
 - CI: `AppTests` / `ViewModelTests`; XCUITest target `WaypointUITests` (onboarding + start/stop menu).
+
+---
+
+## Error recovery hardening
+
+Prerequisites: Accessibility granted; a running workflow target (Chrome or editor).
+
+Checklist:
+
+1. [ ] Quit the target app mid-run → run stops cleanly; clear recovery message; truthful content-free log; app does not crash; focus restore logged (`focusRestore` completed or failed with "couldn't restore focus").
+2. [ ] Revoke Accessibility mid-run → stop with permission/precondition message; no crash; no swallowed errors.
+3. [ ] Secure Input (password field) → precondition failure, no retry loop.
+4. [ ] Click away (focus change) mid-run → treated as intervention → stop.
+5. [ ] Retries never exceed the absolute cap; forbidden/permission failures never skip.
+
+Notes / observed results:
+
+- _(fill after live failure-injection runs)_
+- CI: `RecoveryTests` injects focus change, permission loss, Secure Input, restore failure, retry cap, timeout via simulation seam.

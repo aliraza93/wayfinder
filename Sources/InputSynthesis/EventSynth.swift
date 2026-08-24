@@ -113,19 +113,26 @@ public struct EventSynth: Sendable {
         do {
             try await sovereignty.ensureSecureInputClear()
         } catch {
-            throw EventSynthError.secureInputEnabled
+            throw PreconditionError("Secure Input is enabled; synthetic navigation cannot proceed")
         }
 
         switch safety.validate(action: action, target: target) {
         case .allow:
             break
         case .deny(let reason):
-            throw EventSynthError.safetyDenied(reason)
+            throw ForbiddenActionError(action: action, target: target, reason: reason)
         }
 
         let focus = await focusGuard.assert(target: target)
-        guard focus == .ok else {
-            throw EventSynthError.focusNotOk(focus)
+        if focus != .ok {
+            switch focus {
+            case .changed:
+                throw PreconditionError("focus changed before event (TOCTOU)")
+            case .lost:
+                throw PermissionError("accessibility focus lost mid-run")
+            case .ok:
+                break
+            }
         }
     }
 }

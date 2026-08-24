@@ -47,10 +47,11 @@ final class SkeletonWiringTests: XCTestCase {
         )
 
         let events = recorder.snapshot()
-        // scroll + wait + scroll + wait, twice
-        XCTAssertEqual(events.count, 8)
+        // scroll + wait + scroll + wait, twice + focusRestore
+        XCTAssertEqual(events.count, 9)
         XCTAssertTrue(events.allSatisfy { $0.targetBundleID == "com.google.Chrome" })
-        XCTAssertEqual(Set(events.map(\.actionKind)), Set(["scroll", "wait"]))
+        XCTAssertEqual(Set(events.dropLast().map(\.actionKind)), Set(["scroll", "wait"]))
+        XCTAssertEqual(events.last?.actionKind, "focusRestore")
         XCTAssertTrue(events.allSatisfy { $0.result == .completed })
     }
 

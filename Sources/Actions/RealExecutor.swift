@@ -25,7 +25,7 @@ public actor RealExecutor: ActionExecutor {
             let capped = min(max(1, amount), 100)
             let delta = ScrollAction.deltaY(direction: direction, amount: capped)
             guard let primitive = ScrollPrimitive.make(deltaY: delta) else {
-                throw RealExecutorError.invalidScroll
+                throw ActionError("invalid scroll delta")
             }
             try await synth.emitScroll(primitive, action: action, target: target)
 
@@ -38,7 +38,7 @@ public actor RealExecutor: ActionExecutor {
             case .end: keyCode = 119
             }
             guard let primitive = InertKeyPrimitive.make(keyCode: keyCode) else {
-                throw RealExecutorError.invalidInertKey
+                throw ActionError("invalid inert key for pageNavigate")
             }
             try await synth.emitInertKey(primitive, action: action, target: target)
 
@@ -47,7 +47,7 @@ public actor RealExecutor: ActionExecutor {
             return
 
         default:
-            throw RealExecutorError.unsupportedAction
+            throw ActionError("unsupported action for RealExecutor")
         }
     }
 }

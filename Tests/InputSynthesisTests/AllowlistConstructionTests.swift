@@ -62,8 +62,8 @@ final class AllowlistConstructionTests: XCTestCase {
                 target: target
             )
             XCTFail("expected focus failure")
-        } catch let error as EventSynthError {
-            XCTAssertEqual(error, .focusNotOk(.changed))
+        } catch let error as PreconditionError {
+            XCTAssertTrue(error.message.contains("focus changed") || error.message.contains("TOCTOU"))
         } catch {
             XCTFail("unexpected \(error)")
         }
@@ -87,8 +87,10 @@ final class AllowlistConstructionTests: XCTestCase {
                 target: target
             )
             XCTFail("expected secure input error")
+        } catch let error as PreconditionError {
+            XCTAssertTrue(error.message.lowercased().contains("secure input"))
         } catch {
-            XCTAssertEqual(error as? EventSynthError, .secureInputEnabled)
+            XCTFail("unexpected \(error)")
         }
         XCTAssertTrue(poster.events.isEmpty)
     }

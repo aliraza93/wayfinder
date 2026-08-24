@@ -46,7 +46,7 @@ final class RunnerTests: XCTestCase {
         XCTAssertFalse(events.isEmpty)
         XCTAssertTrue(events.allSatisfy { event in
             event.targetBundleID == "com.google.Chrome"
-                && ["scroll", "wait", "pageNavigate"].contains(event.actionKind)
+                && ["scroll", "wait", "pageNavigate", "focusRestore"].contains(event.actionKind)
         })
         // Content-free: only known fields populated (no free-form document text).
         XCTAssertTrue(events.allSatisfy { !$0.actionKind.isEmpty && !$0.targetBundleID.isEmpty })
