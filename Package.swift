@@ -42,6 +42,11 @@ let package = Package(
             dependencies: ["Domain", "Safety", "Observability"],
             path: "Sources/CoreEngine"
         ),
+        .target(
+            name: "Adapters",
+            dependencies: ["Domain", "Safety"],
+            path: "Sources/Adapters"
+        ),
         .target(name: "Timing", path: "Sources/Timing"),
 
         // Platform / interaction modules (stubs / simulation).
@@ -76,7 +81,6 @@ let package = Package(
             name: "Permissions",
             path: "Sources/Permissions"
         ),
-        .target(name: "Adapters", path: "Sources/Adapters"),
 
         .testTarget(
             name: "DomainTests",
@@ -125,6 +129,11 @@ let package = Package(
             name: "InputSynthesisTests",
             dependencies: ["InputSynthesis", "Domain", "Safety", "CoreEngine", "WaypointAccessibility"],
             path: "Tests/InputSynthesisTests"
+        ),
+        .testTarget(
+            name: "AdapterTests",
+            dependencies: ["Adapters", "Domain", "Safety"],
+            path: "Tests/AdapterTests"
         ),
     ]
 )

@@ -98,3 +98,22 @@ Notes / observed results:
 
 - _(fill after live Waypoint.app run)_
 - CI: `SkeletonWiringTests` exercise `RealExecutor` via `RecordingEventPoster` (no live CGEvents) and `SimulationExecutor` seam.
+
+---
+
+## Chrome browser adapter (Adapters / BrowserAdapter)
+
+Prerequisites: Accessibility granted; Google Chrome open on a **long article** (scrollable page); Chrome frontmost.
+
+Checklist:
+
+1. [ ] Probe at run start: Chrome with a window → capabilities = dependable (scroll-wheel + Page/Home/End). Probe failure (e.g. no window) → **degrades** to the same dependable primitives (does not error).
+2. [ ] Scroll actions move only the Chrome **viewport** (wheel primitive); nothing typed into the page.
+3. [ ] Page Up / Page Down / Home / End move the viewport via inert keys; address bar / tab strip / page content are not edited.
+4. [ ] Confirm **no tab switching** occurs and no web AX tree is used for navigation.
+5. [ ] Run log (when driven by RealExecutor) remains content-free: `{timestamp, actionKind, targetBundleID, result}` only.
+
+Notes / observed results:
+
+- _(fill after live Chrome article run)_
+- Unit `BrowserProbeTests` cover probe→primitive selection, probe-failure → degrade, page-keys-unreliable → scroll-wheel, scroll-wheel-unreliable → arrows, amount caps, and no tab primitive.
