@@ -117,3 +117,21 @@ Notes / observed results:
 
 - _(fill after live Chrome article run)_
 - Unit `BrowserProbeTests` cover probe→primitive selection, probe-failure → degrade, page-keys-unreliable → scroll-wheel, scroll-wheel-unreliable → arrows, amount caps, and no tab primitive.
+
+---
+
+## Read-only editor adapter (Adapters / EditorAdapter)
+
+Prerequisites: Accessibility granted; VS Code (or Cursor) open on a **scratch source file**; editor frontmost. Optional: enable the **Vim** keymap/extension and repeat.
+
+Checklist:
+
+1. [ ] `EditorAdapter` selects only scroll-wheel + arrows/Page/Home/End (all ⊆ inert allowlist); Start/run never emits characters, Return, Delete, paste, save, or Cmd/Ctrl chords.
+2. [ ] Open a scratch file, note content; run a navigation loop (scroll + page + arrows). File **content unchanged**; hash/mtime identical before/after.
+3. [ ] Repeat with **Vim** keymap enabled — file still unchanged (inert keys stay non-mutating in insert/normal).
+4. [ ] Safety suite still green; logs content-free when driven by RealExecutor.
+
+Notes / observed results:
+
+- _(fill after live VS Code ± Vim run)_
+- CI: `EditorAdapterTests` + `MutationGuardTests` (scratch SHA-256 before/after inert loop, with and without vim-keymap-assumed).
