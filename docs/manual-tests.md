@@ -59,3 +59,22 @@ Notes / observed results:
 - Confirmed: APIs only expose bundle ids / bools — **no document content read**.
 - `FocusGuardTests` cover stable → ok, other app → changed, missing → lost, mid-debounce change → changed.
 - Swift module product is named `WaypointAccessibility` (sources remain under `Sources/Accessibility/`) because a module named `Accessibility` circularly conflicts with Apple’s Accessibility.framework through AppKit.
+
+---
+
+## Input synthesis + sovereignty (InputSynthesis)
+
+Prerequisites: Accessibility granted; frontmost Chrome or editor for live posts (optional for unit tests).
+
+Checklist:
+
+1. [ ] Start a run that emits tagged scrolls — the run does **not** stop on its own scrolls.
+2. [ ] Real trackpad/mouse scroll stops the run within ~100 ms.
+3. [ ] Global stop hot-key stops the run within ~100 ms.
+4. [ ] Focus a Secure Input field (e.g. password) — synthesis surfaces a precondition failure (no retry loop).
+5. [ ] Confirm no character/Cmd/Ctrl events can be constructed (`InertKeyPrimitive.make` rejects them).
+
+Notes / observed results:
+
+- Unit tests cover allowlist construction, focus/safety gating, Secure Input probe failure, tagged-ignore / untagged-intervene filter, and self-tag userData.
+- Live CGEventTap + Carbon hot-key wiring is prepared via `SovereigntyEventMapper` / `SystemSecureInputProbe`; full tap registration lands with the walking-skeleton executor milestone. Manual items 1–4 need that wiring under a running Start/Stop loop.

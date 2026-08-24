@@ -56,7 +56,11 @@ let package = Package(
             dependencies: ["Domain", "CoreEngine"],
             path: "Sources/Accessibility"
         ),
-        .target(name: "InputSynthesis", path: "Sources/InputSynthesis"),
+        .target(
+            name: "InputSynthesis",
+            dependencies: ["Domain", "Safety", "CoreEngine", "WaypointAccessibility"],
+            path: "Sources/InputSynthesis"
+        ),
         .target(
             name: "AppControl",
             dependencies: ["Domain"],
@@ -102,6 +106,11 @@ let package = Package(
             name: "AccessibilityTests",
             dependencies: ["WaypointAccessibility", "Domain", "CoreEngine"],
             path: "Tests/AccessibilityTests"
+        ),
+        .testTarget(
+            name: "InputSynthesisTests",
+            dependencies: ["InputSynthesis", "Domain", "Safety", "CoreEngine", "WaypointAccessibility"],
+            path: "Tests/InputSynthesisTests"
         ),
     ]
 )
