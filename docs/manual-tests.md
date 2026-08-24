@@ -154,3 +154,22 @@ Notes / observed results:
 
 - _(fill after live multi-app run)_
 - CI: `RunnerTests` (simulation seam) + `ResolutionTests` (target class → adapter).
+
+---
+
+## UI / control layer
+
+Prerequisites: fresh Accessibility state helpful; run **Waypoint.app**.
+
+Checklist:
+
+1. [ ] First launch shows **Onboarding** with honest copy (what it does / never does); Request Accessibility + Settings deep-link; recheck flips to granted without relaunch.
+2. [ ] **Workflow Editor**: add targets from running apps, add palette steps (scroll/page/wait only), validate, save — illegal/empty drafts cannot save.
+3. [ ] Menu bar: pick saved workflow, **Start** / **Stop**, live status shows current/next/elapsed; engine does not block the menu.
+4. [ ] **Run Timeline** lists content-free events after a run.
+5. [ ] Full create → save → run path works without editing JSON by hand.
+
+Notes / observed results:
+
+- _(fill after live UI run)_
+- CI: `AppTests` / `ViewModelTests`; XCUITest target `WaypointUITests` (onboarding + start/stop menu).

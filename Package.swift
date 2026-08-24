@@ -19,6 +19,7 @@ let package = Package(
         .library(name: "Permissions", targets: ["Permissions"]),
         .library(name: "Adapters", targets: ["Adapters"]),
         .library(name: "Timing", targets: ["Timing"]),
+        .library(name: "AppPresentation", targets: ["AppPresentation"]),
     ],
     targets: [
         // Pure-logic modules — must not import AppKit / ApplicationServices.
@@ -48,6 +49,18 @@ let package = Package(
             path: "Sources/Adapters"
         ),
         .target(name: "Timing", path: "Sources/Timing"),
+        .target(
+            name: "AppPresentation",
+            dependencies: [
+                "Domain",
+                "Config",
+                "Safety",
+                "CoreEngine",
+                "Observability",
+                "Permissions",
+            ],
+            path: "Sources/AppPresentation"
+        ),
 
         // Platform / interaction modules (stubs / simulation).
         .target(
@@ -136,6 +149,18 @@ let package = Package(
             name: "AdapterTests",
             dependencies: ["Adapters", "Domain", "Safety"],
             path: "Tests/AdapterTests"
+        ),
+        .testTarget(
+            name: "AppTests",
+            dependencies: [
+                "AppPresentation",
+                "Domain",
+                "Config",
+                "Safety",
+                "Observability",
+                "Permissions",
+            ],
+            path: "Tests/AppTests"
         ),
     ]
 )

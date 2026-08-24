@@ -11,6 +11,10 @@
 		AA0000000000000000000002 /* RootMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000011 /* RootMenu.swift */; };
 		AA000000000000000000000F /* SkeletonControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000013 /* SkeletonControls.swift */; };
 		AA0000000000000000000015 /* WorkflowControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000014 /* WorkflowControls.swift */; };
+		AA0000000000000000000100 /* AppSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000110 /* AppSession.swift */; };
+		AA0000000000000000000101 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000111 /* OnboardingView.swift */; };
+		AA0000000000000000000102 /* WorkflowEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000112 /* WorkflowEditorView.swift */; };
+		AA0000000000000000000103 /* RunTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000113 /* RunTimelineView.swift */; };
 		AA0000000000000000000003 /* Domain in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000030 /* Domain */; };
 		AA0000000000000000000004 /* Config in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000031 /* Config */; };
 		AA0000000000000000000005 /* Safety in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000032 /* Safety */; };
@@ -23,7 +27,20 @@
 		AA000000000000000000000C /* Permissions in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000039 /* Permissions */; };
 		AA000000000000000000000D /* Adapters in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000003A /* Adapters */; };
 		AA000000000000000000000E /* Timing in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000003B /* Timing */; };
+		AA0000000000000000000104 /* AppPresentation in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000003D /* AppPresentation */; };
+		AA0000000000000000000200 /* OnboardingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000210 /* OnboardingUITests.swift */; };
+		AA0000000000000000000201 /* StartStopUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000211 /* StartStopUITests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AA0000000000000000000220 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000060 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000050;
+			remoteInfo = Waypoint;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		AA0000000000000000000010 /* WaypointApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaypointApp.swift; sourceTree = "<group>"; };
@@ -31,6 +48,13 @@
 		AA0000000000000000000013 /* SkeletonControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkeletonControls.swift; sourceTree = "<group>"; };
 		AA0000000000000000000014 /* WorkflowControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowControls.swift; sourceTree = "<group>"; };
 		AA0000000000000000000012 /* Waypoint.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Waypoint.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000110 /* AppSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSession.swift; sourceTree = "<group>"; };
+		AA0000000000000000000111 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000112 /* WorkflowEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowEditorView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000113 /* RunTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunTimelineView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000210 /* OnboardingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingUITests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000211 /* StartStopUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartStopUITests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000212 /* WaypointUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WaypointUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,6 +74,14 @@
 				AA000000000000000000000C /* Permissions in Frameworks */,
 				AA000000000000000000000D /* Adapters in Frameworks */,
 				AA000000000000000000000E /* Timing in Frameworks */,
+				AA0000000000000000000104 /* AppPresentation in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000000000000000000221 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -60,6 +92,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000041 /* App */,
+				AA0000000000000000000044 /* UITests */,
 				AA0000000000000000000043 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -68,7 +101,11 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000010 /* WaypointApp.swift */,
+				AA0000000000000000000110 /* AppSession.swift */,
 				AA0000000000000000000042 /* MenuBar */,
+				AA0000000000000000000045 /* Onboarding */,
+				AA0000000000000000000046 /* Editor */,
+				AA0000000000000000000047 /* Timeline */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -83,10 +120,45 @@
 			path = MenuBar;
 			sourceTree = "<group>";
 		};
+		AA0000000000000000000045 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000111 /* OnboardingView.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000046 /* Editor */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000112 /* WorkflowEditorView.swift */,
+			);
+			path = Editor;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000047 /* Timeline */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000113 /* RunTimelineView.swift */,
+			);
+			path = Timeline;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000044 /* UITests */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000210 /* OnboardingUITests.swift */,
+				AA0000000000000000000211 /* StartStopUITests.swift */,
+			);
+			name = UITests;
+			path = Tests/UITests;
+			sourceTree = "<group>";
+		};
 		AA0000000000000000000043 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000012 /* Waypoint.app */,
+				AA0000000000000000000212 /* WaypointUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -119,10 +191,28 @@
 				AA0000000000000000000039 /* Permissions */,
 				AA000000000000000000003A /* Adapters */,
 				AA000000000000000000003B /* Timing */,
+				AA000000000000000000003D /* AppPresentation */,
 			);
 			productName = Waypoint;
 			productReference = AA0000000000000000000012 /* Waypoint.app */;
 			productType = "com.apple.product-type.application";
+		};
+		AA0000000000000000000222 /* WaypointUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000072 /* Build configuration list for PBXNativeTarget "WaypointUITests" */;
+			buildPhases = (
+				AA0000000000000000000223 /* Sources */,
+				AA0000000000000000000221 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA0000000000000000000224 /* PBXTargetDependency */,
+			);
+			name = WaypointUITests;
+			productName = WaypointUITests;
+			productReference = AA0000000000000000000212 /* WaypointUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
@@ -133,6 +223,11 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1500;
 				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					AA0000000000000000000222 = {
+						TestTargetID = AA0000000000000000000050;
+					};
+				};
 			};
 			buildConfigurationList = AA0000000000000000000071 /* Build configuration list for PBXProject "Waypoint" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -151,6 +246,7 @@
 			projectRoot = "";
 			targets = (
 				AA0000000000000000000050 /* Waypoint */,
+				AA0000000000000000000222 /* WaypointUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -164,10 +260,31 @@
 				AA0000000000000000000002 /* RootMenu.swift in Sources */,
 				AA000000000000000000000F /* SkeletonControls.swift in Sources */,
 				AA0000000000000000000015 /* WorkflowControls.swift in Sources */,
+				AA0000000000000000000100 /* AppSession.swift in Sources */,
+				AA0000000000000000000101 /* OnboardingView.swift in Sources */,
+				AA0000000000000000000102 /* WorkflowEditorView.swift in Sources */,
+				AA0000000000000000000103 /* RunTimelineView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000000000000000000223 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000000000000000000200 /* OnboardingUITests.swift in Sources */,
+				AA0000000000000000000201 /* StartStopUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA0000000000000000000224 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000050 /* Waypoint */;
+			targetProxy = AA0000000000000000000220 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		AA0000000000000000000080 /* Debug */ = {
@@ -259,6 +376,40 @@
 			};
 			name = Release;
 		};
+		AA0000000000000000000084 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.twixrsolutions.waypoint.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Waypoint;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000085 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.twixrsolutions.waypoint.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Waypoint;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -276,6 +427,15 @@
 			buildConfigurations = (
 				AA0000000000000000000080 /* Debug */,
 				AA0000000000000000000081 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000072 /* Build configuration list for PBXNativeTarget "WaypointUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000084 /* Debug */,
+				AA0000000000000000000085 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -349,6 +509,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
 			productName = Timing;
+		};
+		AA000000000000000000003D /* AppPresentation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = AppPresentation;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1,77 +1,92 @@
 import AppKit
-import Permissions
 import SwiftUI
 
-/// Menu-bar: Accessibility + skeleton + minimal workflow selector.
 struct RootMenu: View {
-    @StateObject private var permissions = MenuPermissionModel()
-    @StateObject private var skeleton = SkeletonRunner()
-    @StateObject private var workflows = WorkflowMenuController()
+    @ObservedObject var session: AppSession
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Text(permissions.label)
+        Text(session.permissionLabel)
+            .accessibilityIdentifier("menu.permission")
+        Text(session.liveStatusLine)
+            .font(.caption)
+            .accessibilityIdentifier("menu.liveStatus")
+
         Button("Request Accessibility…") {
-            permissions.requestAccess()
-            skeleton.updateAccessibility(permissions.state)
-            workflows.updateAccessibility(permissions.state)
+            session.requestAccessibility()
         }
+        .accessibilityIdentifier("menu.requestAccessibility")
         Button("Open Accessibility Settings") {
-            permissions.openSettings()
-            skeleton.updateAccessibility(permissions.state)
-            workflows.updateAccessibility(permissions.state)
+            session.openAccessibilitySettings()
         }
+        Button("Permission onboarding…") {
+            session.openOnboarding()
+            openWindow(id: "onboarding")
+        }
+        .accessibilityIdentifier("menu.onboarding")
+
         Divider()
-        SkeletonControls(runner: skeleton)
-        if !skeleton.lastLogSummary.isEmpty {
-            Text("Skeleton log: \(skeleton.lastLogSummary)")
+
+        Text("Workflows")
+            .font(.caption)
+        if session.workflowNames.isEmpty {
+            Text("No saved workflows — open the editor")
                 .font(.caption)
+        } else {
+            ForEach(session.workflowNames, id: \.self) { name in
+                Button(session.selectedWorkflow == name ? "▶ \(name)" : name) {
+                    session.selectWorkflow(name)
+                }
+            }
         }
+
+        Button(session.isRunning ? "Stop" : "Start") {
+            if session.isRunning {
+                session.stop()
+            } else {
+                session.startSelected()
+            }
+        }
+        .disabled(!session.canStart && !session.isRunning)
+        .accessibilityIdentifier("menu.startStop")
+
         Divider()
-        WorkflowControls(controller: workflows)
-        if !workflows.lastLogSummary.isEmpty {
-            Text("Workflow log: \(workflows.lastLogSummary)")
+        Button("Workflow Editor…") {
+            session.openEditor()
+            openWindow(id: "editor")
+        }
+        .accessibilityIdentifier("menu.editor")
+        Button("Run Timeline…") {
+            session.openTimeline()
+            openWindow(id: "timeline")
+        }
+        .accessibilityIdentifier("menu.timeline")
+        Button("Refresh workflows") {
+            session.refreshWorkflowNames()
+        }
+
+        if !session.lastMessage.isEmpty {
+            Text(session.lastMessage)
                 .font(.caption)
+                .lineLimit(3)
         }
+
         Divider()
-        Button("Quit") {
+        Text("Stop hot-key: Ctrl+Opt+.")
+            .font(.caption2)
+        Button("Quit Waypoint") {
             NSApplication.shared.terminate(nil)
         }
+        .accessibilityIdentifier("menu.quit")
         .onAppear {
-            permissions.refresh()
-            skeleton.updateAccessibility(permissions.state)
-            workflows.updateAccessibility(permissions.state)
+            session.refreshPermissions()
+            session.refreshWorkflowNames()
+            if ProcessInfo.processInfo.arguments.contains("-uitesting") {
+                openWindow(id: "uitest-host")
+                openWindow(id: "onboarding")
+            } else if session.showOnboarding {
+                openWindow(id: "onboarding")
+            }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            permissions.refresh()
-            skeleton.updateAccessibility(permissions.state)
-            workflows.updateAccessibility(permissions.state)
-        }
-    }
-}
-
-@MainActor
-final class MenuPermissionModel: ObservableObject {
-    @Published private(set) var state: PermissionState = .unknown
-    private let permission = AccessibilityPermission()
-
-    var label: String {
-        switch state {
-        case .unknown: return "Accessibility: Unknown"
-        case .denied: return "Accessibility: Denied"
-        case .granted: return "Accessibility: Granted"
-        }
-    }
-
-    func refresh() {
-        state = permission.refresh()
-    }
-
-    func requestAccess() {
-        state = permission.requestAccess()
-    }
-
-    func openSettings() {
-        permission.openSystemSettings()
-        state = permission.refresh()
     }
 }
