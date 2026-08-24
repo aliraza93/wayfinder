@@ -47,7 +47,13 @@ let package = Package(
         // Platform / interaction modules (stubs / simulation).
         .target(
             name: "Actions",
-            dependencies: ["Domain", "CoreEngine"],
+            dependencies: [
+                "Domain",
+                "CoreEngine",
+                "InputSynthesis",
+                "Safety",
+                "WaypointAccessibility",
+            ],
             path: "Sources/Actions"
         ),
         // Named WaypointAccessibility — "Accessibility" clashes with Apple's Accessibility.framework via AppKit.
@@ -89,7 +95,15 @@ let package = Package(
         ),
         .testTarget(
             name: "EngineTests",
-            dependencies: ["CoreEngine", "Actions", "Domain", "Safety", "Observability"],
+            dependencies: [
+                "CoreEngine",
+                "Actions",
+                "Domain",
+                "Safety",
+                "Observability",
+                "InputSynthesis",
+                "WaypointAccessibility",
+            ],
             path: "Tests/EngineTests"
         ),
         .testTarget(

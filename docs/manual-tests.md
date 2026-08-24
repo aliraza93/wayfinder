@@ -77,4 +77,24 @@ Checklist:
 Notes / observed results:
 
 - Unit tests cover allowlist construction, focus/safety gating, Secure Input probe failure, tagged-ignore / untagged-intervene filter, and self-tag userData.
-- Live CGEventTap + Carbon hot-key wiring is prepared via `SovereigntyEventMapper` / `SystemSecureInputProbe`; full tap registration lands with the walking-skeleton executor milestone. Manual items 1–4 need that wiring under a running Start/Stop loop.
+- Walking skeleton wires `SovereigntyListenTap` + `GlobalStopHotKey` (Ctrl+Opt+.). Re-check items 1–4 under **Walking-skeleton MVP** below.
+
+---
+
+## Walking-skeleton MVP (Actions / RealExecutor)
+
+Prerequisites: Accessibility **Granted** for Waypoint; Chrome or VS Code open with a scrollable document; frontmost that app (not Waypoint).
+
+Checklist:
+
+1. [ ] Menu shows Accessibility state; Start is disabled until **Granted**.
+2. [ ] Bring Chrome/VS Code frontmost → **Start Skeleton** → window scrolls **down** then **up** on a timer; no text typed, deleted, or saved.
+3. [ ] Run does **not** stop itself on its own tagged scrolls.
+4. [ ] Real mouse/trackpad scroll or keypress stops the run promptly; status updates; log summary is content-free (`scroll`/`wait` + result + bundle id only).
+5. [ ] **Ctrl+Opt+.** (global stop) stops a running skeleton promptly.
+6. [ ] Menu **Stop Skeleton** also stops; after stop, status reports focus ok or honest "couldn't restore focus".
+
+Notes / observed results:
+
+- _(fill after live Waypoint.app run)_
+- CI: `SkeletonWiringTests` exercise `RealExecutor` via `RecordingEventPoster` (no live CGEvents) and `SimulationExecutor` seam.

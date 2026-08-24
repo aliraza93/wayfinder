@@ -58,12 +58,17 @@ public struct TimingPolicy: Sendable {
                 return false
             }
             onPoll?()
-            await Task.yield()
+            if onPoll == nil {
+                // Production / wall clock: sleep so waits honor real timeouts.
+                try? await Task.sleep(nanoseconds: 10_000_000) // 10 ms
+            } else {
+                await Task.yield()
+            }
             if predicate() {
                 return true
             }
             polls += 1
-            // Safety valve for clocks that never advance.
+            // Safety valve for clocks that never advance (tests without onPoll).
             if polls > 10_000 {
                 return predicate()
             }

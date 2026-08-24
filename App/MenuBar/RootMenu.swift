@@ -2,25 +2,38 @@ import AppKit
 import Permissions
 import SwiftUI
 
-/// Menu-bar debug affordance for Accessibility TCC state.
+/// Menu-bar: Accessibility affordance + walking-skeleton Start/Stop.
 struct RootMenu: View {
-    @StateObject private var model = MenuPermissionModel()
+    @StateObject private var permissions = MenuPermissionModel()
+    @StateObject private var skeleton = SkeletonRunner()
 
     var body: some View {
-        Text(model.label)
+        Text(permissions.label)
         Button("Request Accessibility…") {
-            model.requestAccess()
+            permissions.requestAccess()
+            skeleton.updateAccessibility(permissions.state)
         }
         Button("Open Accessibility Settings") {
-            model.openSettings()
+            permissions.openSettings()
+            skeleton.updateAccessibility(permissions.state)
+        }
+        Divider()
+        SkeletonControls(runner: skeleton)
+        if !skeleton.lastLogSummary.isEmpty {
+            Text("Log: \(skeleton.lastLogSummary)")
+                .font(.caption)
         }
         Divider()
         Button("Quit") {
             NSApplication.shared.terminate(nil)
         }
-        .onAppear { model.refresh() }
+        .onAppear {
+            permissions.refresh()
+            skeleton.updateAccessibility(permissions.state)
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            model.refresh()
+            permissions.refresh()
+            skeleton.updateAccessibility(permissions.state)
         }
     }
 }
