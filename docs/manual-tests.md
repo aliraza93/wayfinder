@@ -198,3 +198,16 @@ Notes / observed results:
 ## Cross-app manual matrix
 
 See **[`docs/testing.md`](testing.md)** for the Chrome / VS Code / Finder × macOS matrix, merge-gate rules, and the provisioned (PPPC/MDM) integration path. Ordinary CI does not grant Accessibility TCC.
+
+---
+
+## Packaging / clean-machine (DMG)
+
+See **[`docs/install.md`](install.md)**. Maintainer checks: `./scripts/verify-packaging.sh`. Full ship: `./scripts/release.sh` (Developer ID + notary credentials).
+
+Notes / observed results (2026-08-24):
+
+- App Sandbox **OFF** in project + entitlements; hardened runtime **ON**.
+- `./scripts/verify-packaging.sh` exercised Release build path.
+- **Developer ID / notarization:** this machine had **0** codesigning identities — `sign.sh` / `notarize.sh` / staple of a real release artifact **blocked until** a Developer ID Application cert and `notarytool` credentials are installed. Record Gatekeeper results on a second Mac after the first stapled DMG exists.
+

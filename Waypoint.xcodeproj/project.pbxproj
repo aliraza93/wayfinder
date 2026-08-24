@@ -47,6 +47,8 @@
 		AA0000000000000000000011 /* RootMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootMenu.swift; sourceTree = "<group>"; };
 		AA0000000000000000000013 /* SkeletonControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkeletonControls.swift; sourceTree = "<group>"; };
 		AA0000000000000000000014 /* WorkflowControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowControls.swift; sourceTree = "<group>"; };
+		AA0000000000000000000016 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA0000000000000000000017 /* Waypoint.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Waypoint.entitlements; sourceTree = "<group>"; };
 		AA0000000000000000000012 /* Waypoint.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Waypoint.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000110 /* AppSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSession.swift; sourceTree = "<group>"; };
 		AA0000000000000000000111 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -102,6 +104,8 @@
 			children = (
 				AA0000000000000000000010 /* WaypointApp.swift */,
 				AA0000000000000000000110 /* AppSession.swift */,
+				AA0000000000000000000016 /* Info.plist */,
+				AA0000000000000000000017 /* Waypoint.entitlements */,
 				AA0000000000000000000042 /* MenuBar */,
 				AA0000000000000000000045 /* Onboarding */,
 				AA0000000000000000000046 /* Editor */,
@@ -323,17 +327,15 @@
 		AA0000000000000000000082 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/Waypoint.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Waypoint;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -351,17 +353,15 @@
 		AA0000000000000000000083 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = App/Waypoint.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Waypoint;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

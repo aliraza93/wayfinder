@@ -38,6 +38,20 @@ xcodebuild -project Waypoint.xcodeproj -scheme Waypoint -destination 'platform=m
 
 Testing pyramid, manual matrix, and provisioned Accessibility runner: [`docs/testing.md`](docs/testing.md).
 
+Install / grant Accessibility / logs: [`docs/install.md`](docs/install.md). Privacy: [`docs/privacy.md`](docs/privacy.md).
+
+### Packaging (Developer ID)
+
+```bash
+./scripts/verify-packaging.sh          # sandbox off + Release build (no cert needed)
+# With Developer ID + notary profile:
+#   export DEVELOPER_ID_APPLICATION="Developer ID Application: … (TEAMID)"
+#   export NOTARYTOOL_PROFILE=WaypointNotary
+#   ./scripts/release.sh               # sign → DMG → notarize → staple → dist/
+```
+
+App Sandbox stays **OFF**. Sparkle is not included in v1 (no network).
+
 Requires Xcode (full app, not only Command Line Tools) for `xcodebuild` and running the menu-bar app.
 
 ## Layout

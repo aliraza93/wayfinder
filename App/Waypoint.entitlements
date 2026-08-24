@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Minimal entitlements for Developer ID + hardened runtime.
+	  App Sandbox must stay disabled — Accessibility control of other apps is
+	  incompatible with sandboxing (and that also rules out Mac App Store distribution).
+	  Do not add the app-sandbox entitlement key.
+	-->
+</dict>
+</plist>
