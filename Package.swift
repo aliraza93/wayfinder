@@ -52,7 +52,11 @@ let package = Package(
         ),
         .target(name: "Accessibility", path: "Sources/Accessibility"),
         .target(name: "InputSynthesis", path: "Sources/InputSynthesis"),
-        .target(name: "AppControl", path: "Sources/AppControl"),
+        .target(
+            name: "AppControl",
+            dependencies: ["Domain"],
+            path: "Sources/AppControl"
+        ),
         .target(name: "Permissions", path: "Sources/Permissions"),
         .target(name: "Adapters", path: "Sources/Adapters"),
 
@@ -75,6 +79,11 @@ let package = Package(
             name: "EngineTests",
             dependencies: ["CoreEngine", "Actions", "Domain", "Safety", "Observability"],
             path: "Tests/EngineTests"
+        ),
+        .testTarget(
+            name: "AppControlTests",
+            dependencies: ["AppControl", "Domain"],
+            path: "Tests/AppControlTests"
         ),
     ]
 )
