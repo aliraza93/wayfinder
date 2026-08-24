@@ -33,12 +33,23 @@ let package = Package(
             dependencies: ["Domain"],
             path: "Sources/Safety"
         ),
-        .target(name: "CoreEngine", path: "Sources/CoreEngine"),
+        .target(
+            name: "Observability",
+            path: "Sources/Observability"
+        ),
+        .target(
+            name: "CoreEngine",
+            dependencies: ["Domain", "Safety", "Observability"],
+            path: "Sources/CoreEngine"
+        ),
         .target(name: "Timing", path: "Sources/Timing"),
 
-        // Platform / interaction modules (stubs in this milestone).
-        .target(name: "Actions", path: "Sources/Actions"),
-        .target(name: "Observability", path: "Sources/Observability"),
+        // Platform / interaction modules (stubs / simulation).
+        .target(
+            name: "Actions",
+            dependencies: ["Domain", "CoreEngine"],
+            path: "Sources/Actions"
+        ),
         .target(name: "Accessibility", path: "Sources/Accessibility"),
         .target(name: "InputSynthesis", path: "Sources/InputSynthesis"),
         .target(name: "AppControl", path: "Sources/AppControl"),
@@ -59,6 +70,11 @@ let package = Package(
             name: "SafetyTests",
             dependencies: ["Safety", "Domain"],
             path: "Tests/SafetyTests"
+        ),
+        .testTarget(
+            name: "EngineTests",
+            dependencies: ["CoreEngine", "Actions", "Domain", "Safety", "Observability"],
+            path: "Tests/EngineTests"
         ),
     ]
 )
