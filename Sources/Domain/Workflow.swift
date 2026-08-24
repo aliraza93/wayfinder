@@ -5,7 +5,7 @@ public struct Workflow: Equatable, Sendable {
     public var loop: LoopSettings
     /// Existing workspace files (legacy field; prefer `review.filePaths`).
     public var reviewFilePaths: [String]
-    /// Single Read & Review Workspace session configuration.
+    /// Universal Workspace Navigation session configuration.
     public var review: ReviewWorkspaceSettings
 
     public init(

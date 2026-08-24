@@ -20,17 +20,21 @@ public actor RealExecutor: ActionExecutor {
     private let activator: AppActivator
     private let fileOpener: ExistingFileOpener
     private let clickResolver: FocusedContentClickResolver
+    private let explorerResolver: ExplorerSidebarClickResolver
+    private var explorerHop: Int = 0
 
     public init(
         synth: EventSynth,
         activator: AppActivator = AppActivator(),
         fileOpener: ExistingFileOpener = ExistingFileOpener(),
-        clickResolver: FocusedContentClickResolver = FocusedContentClickResolver()
+        clickResolver: FocusedContentClickResolver = FocusedContentClickResolver(),
+        explorerResolver: ExplorerSidebarClickResolver = ExplorerSidebarClickResolver()
     ) {
         self.synth = synth
         self.activator = activator
         self.fileOpener = fileOpener
         self.clickResolver = clickResolver
+        self.explorerResolver = explorerResolver
     }
 
     public func execute(action: ActionKind, target: TargetApp) async throws {
@@ -83,74 +87,98 @@ public actor RealExecutor: ActionExecutor {
             try await synth.emitNavigationChord(primitive, action: action, target: target)
 
         case .contentClick:
-            guard let point = clickResolver.resolvePoint(bundleID: target.bundleID, randomize: true),
-                  let primitive = ClickPrimitive.make(x: point.x, y: point.y)
+            // Prefer upper/mid editor (not bottom). Double-click selects a word/line highlight.
+            guard let point = clickResolver.resolvePoint(
+                bundleID: target.bundleID,
+                randomize: true,
+                verticalBand: .upperMid
+            ),
+                let primitive = ClickPrimitive.make(x: point.x, y: point.y)
             else {
                 throw ActionError("could not resolve content click target")
             }
-            try await synth.emitClick(primitive, action: action, target: target)
+            try await synth.emitDoubleClick(primitive, action: action, target: target)
 
         case .explorerFileSwitch(let direction):
-            // Ctrl+Tab among already-open project files is the reliable path in Cursor.
-            // Explorer tree walk is a secondary path when we intentionally branch there.
-            let useExplorer = Double.random(in: 0...1) < 0.35
-            if !useExplorer {
-                guard let tab = NavigationChordPrimitive.tabSwitch(direction: direction) else {
-                    throw ActionError("tab switch chord not allowlisted")
-                }
-                try await synth.emitNavigationChord(tab, action: action, target: target)
-                try await Task.sleep(nanoseconds: 300_000_000)
-                break
-            }
-
-            guard let focus = NavigationChordPrimitive.make(NavigationChordAllowlist.focusExplorer) else {
-                throw ActionError("focus explorer chord not allowlisted")
-            }
-            try await synth.emitNavigationChord(focus, action: action, target: target)
-            try await Task.sleep(nanoseconds: 300_000_000)
-
-            let arrowCode: UInt16 = (direction == .next) ? 125 : 126
-            let hops = Int.random(in: 1...5)
-            for _ in 0..<hops {
-                guard let arrow = InertKeyPrimitive.make(keyCode: arrowCode) else {
-                    throw ActionError("invalid explorer arrow")
-                }
-                try await synth.emitInertKey(arrow, action: action, target: target)
-                try await Task.sleep(nanoseconds: UInt64(Double.random(in: 0.1...0.28) * 1_000_000_000))
-            }
-
-            guard let open = NavigationChordPrimitive.make(NavigationChordAllowlist.explorerOpenSelection) else {
-                throw ActionError("explorer open chord not allowlisted")
-            }
-            try await synth.emitNavigationChord(open, action: action, target: target)
-            try await Task.sleep(nanoseconds: 350_000_000)
-
-            // Click into the editor content so later arrows don't stay trapped in the tree.
-            if let point = clickResolver.resolvePoint(bundleID: target.bundleID, randomize: false),
-               let click = ClickPrimitive.make(x: point.x, y: point.y)
-            {
-                try await synth.emitClick(click, action: .contentClick, target: target)
-            }
+            // Open another project file from the LEFT SIDEBAR only.
+            // NEVER press Return — if focus is still in the editor, Return mutates source.
+            try await openFileFromExplorerSidebar(direction: direction, target: target, action: action)
 
         case .wait:
             return
 
         case .activateApp(let bundleID):
             let id = bundleID.isEmpty ? target.bundleID : bundleID
-            let ok = await activator.activateOrLaunch(bundleID: id)
+            var ok = false
+            for _ in 0..<3 {
+                ok = await activator.activateOrLaunch(bundleID: id, timeoutSeconds: 6.0)
+                if ok { break }
+                try await Task.sleep(nanoseconds: 400_000_000)
+            }
             guard ok else {
                 throw ActionError("could not activate or launch \(id)")
             }
+            try await Task.sleep(nanoseconds: 500_000_000)
 
         case .openExistingFile(let path):
             try await fileOpener.open(path: path, withBundleID: target.bundleID)
             _ = await activator.activateOrLaunch(bundleID: target.bundleID, timeoutSeconds: 3.0)
+            // Start at top of the file — do not jump to bottom.
+            if let home = InertKeyPrimitive.make(keyCode: 115) {
+                try await synth.emitInertKey(home, action: .pageNavigate(.home), target: target)
+            }
 
         case .returnToPrevious:
             throw ActionError("returnToPrevious must be rewritten by the engine")
 
         case .switchWindow:
             throw ActionError("unsupported action for RealExecutor")
+        }
+    }
+
+    /// Double-click a file row in the sidebar, then land at top/mid of the editor (no End).
+    private func openFileFromExplorerSidebar(
+        direction: WindowDirection,
+        target: TargetApp,
+        action: ActionKind
+    ) async throws {
+        guard target.classification == .editor else {
+            throw ActionError("explorer file switch is editor-only")
+        }
+
+        try await synth.emitModifierRelease(action: action, target: target)
+        try await Task.sleep(nanoseconds: 80_000_000)
+
+        explorerHop += 1
+        guard let point = explorerResolver.resolveFileRowClick(
+            bundleID: target.bundleID,
+            direction: direction,
+            hop: explorerHop
+        ),
+            let click = ClickPrimitive.make(x: point.x, y: point.y)
+        else {
+            throw ActionError("could not resolve explorer sidebar click")
+        }
+
+        try await synth.emitModifierRelease(action: action, target: target)
+        // Double-click opens the file reliably without Return.
+        try await synth.emitDoubleClick(click, action: action, target: target)
+        try await Task.sleep(nanoseconds: 400_000_000)
+
+        try await synth.emitModifierRelease(action: action, target: target)
+        // Go to top, then double-click mid/upper content so a line/word is highlighted.
+        if let home = InertKeyPrimitive.make(keyCode: 115) {
+            try await synth.emitInertKey(home, action: .pageNavigate(.home), target: target)
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+        if let content = clickResolver.resolvePoint(
+            bundleID: target.bundleID,
+            randomize: true,
+            verticalBand: .upperMid
+        ),
+            let contentClick = ClickPrimitive.make(x: content.x, y: content.y)
+        {
+            try await synth.emitDoubleClick(contentClick, action: .contentClick, target: target)
         }
     }
 }

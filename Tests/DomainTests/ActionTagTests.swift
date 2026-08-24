@@ -76,7 +76,7 @@ final class ActionTagTests: XCTestCase {
         )
         XCTAssertEqual(
             ActionKind.explorerFileSwitch(direction: .next).capabilityTags.primitive,
-            .navigationChord
+            .targetedClick
         )
         XCTAssertEqual(
             ActionKind.openExistingFile(path: "/a").capabilityTags.primitive,

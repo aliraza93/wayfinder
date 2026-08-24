@@ -19,6 +19,9 @@ public struct SynthesizedEvent: Equatable, Sendable {
         case inertKey(keyCode: UInt16, keyDown: Bool)
         case navigationChord(keyCode: UInt16, control: Bool, shift: Bool, option: Bool, command: Bool, keyDown: Bool)
         case click(x: Double, y: Double, mouseDown: Bool)
+        /// Explicit modifier key-ups so later clicks are not Cmd/Shift-clicks (multi-select).
+        case releaseModifiers
+        case mouseMoved(x: Double, y: Double)
     }
 
     public var kind: Kind
@@ -70,6 +73,28 @@ public struct CGEventPoster: EventPoster {
                 SelfEventTag.apply(to: cg)
                 cg.post(tap: .cghidEventTap)
             }
+        case .releaseModifiers:
+            // Virtual key codes: command, shift, option, control (left).
+            let modifierKeys: [UInt16] = [55, 56, 58, 59]
+            for key in modifierKeys {
+                if let up = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: false) {
+                    up.flags = []
+                    SelfEventTag.apply(to: up)
+                    up.post(tap: .cghidEventTap)
+                }
+            }
+        case .mouseMoved(let x, let y):
+            let point = CGPoint(x: x, y: y)
+            if let cg = CGEvent(
+                mouseEventSource: nil,
+                mouseType: .mouseMoved,
+                mouseCursorPosition: point,
+                mouseButton: .left
+            ) {
+                cg.flags = []
+                SelfEventTag.apply(to: cg)
+                cg.post(tap: .cghidEventTap)
+            }
         case .click(let x, let y, let mouseDown):
             let point = CGPoint(x: x, y: y)
             let type: CGEventType = mouseDown ? .leftMouseDown : .leftMouseUp
@@ -79,6 +104,8 @@ public struct CGEventPoster: EventPoster {
                 mouseCursorPosition: point,
                 mouseButton: .left
             ) {
+                // Never inherit sticky Cmd/Shift — that multi-selects explorer rows.
+                cg.flags = []
                 SelfEventTag.apply(to: cg)
                 cg.post(tap: .cghidEventTap)
             }
@@ -158,6 +185,8 @@ public struct EventSynth: Sendable {
         )
         poster.post(SynthesizedEvent(kind: kindDown, tagged: true))
         poster.post(SynthesizedEvent(kind: kindUp, tagged: true))
+        // Critical: drop sticky Cmd/Shift so the next click is not a multi-select.
+        poster.post(SynthesizedEvent(kind: .releaseModifiers, tagged: true))
     }
 
     public func emitClick(
@@ -166,8 +195,33 @@ public struct EventSynth: Sendable {
         target: TargetApp
     ) async throws {
         try await prepare(action: action, target: target)
+        poster.post(SynthesizedEvent(kind: .releaseModifiers, tagged: true))
+        poster.post(SynthesizedEvent(kind: .mouseMoved(x: primitive.x, y: primitive.y), tagged: true))
         poster.post(SynthesizedEvent(kind: .click(x: primitive.x, y: primitive.y, mouseDown: true), tagged: true))
         poster.post(SynthesizedEvent(kind: .click(x: primitive.x, y: primitive.y, mouseDown: false), tagged: true))
+    }
+
+    /// Two quick clicks at the same point (open file / select word). Modifiers cleared.
+    public func emitDoubleClick(
+        _ primitive: ClickPrimitive,
+        action: ActionKind,
+        target: TargetApp
+    ) async throws {
+        try await prepare(action: action, target: target)
+        poster.post(SynthesizedEvent(kind: .releaseModifiers, tagged: true))
+        poster.post(SynthesizedEvent(kind: .mouseMoved(x: primitive.x, y: primitive.y), tagged: true))
+        for _ in 0..<2 {
+            poster.post(SynthesizedEvent(kind: .releaseModifiers, tagged: true))
+            poster.post(SynthesizedEvent(kind: .click(x: primitive.x, y: primitive.y, mouseDown: true), tagged: true))
+            poster.post(SynthesizedEvent(kind: .click(x: primitive.x, y: primitive.y, mouseDown: false), tagged: true))
+            try await Task.sleep(nanoseconds: 70_000_000)
+        }
+    }
+
+    /// Drop Cmd/Shift/Opt/Ctrl without changing focus (used before explorer clicks).
+    public func emitModifierRelease(action: ActionKind, target: TargetApp) async throws {
+        try await prepare(action: action, target: target)
+        poster.post(SynthesizedEvent(kind: .releaseModifiers, tagged: true))
     }
 
     private func prepare(action: ActionKind, target: TargetApp) async throws {

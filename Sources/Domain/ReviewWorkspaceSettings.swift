@@ -1,11 +1,16 @@
 import Foundation
 
-/// Default single workflow name for the cohesive read/review session.
-public enum ReadAndReviewWorkspace {
-    public static let workflowName = "Read & Review Workspace"
+/// Default single workflow — one orchestrator for the whole workspace.
+public enum UniversalWorkspaceNavigation {
+    public static let workflowName = "Universal Workspace Navigation"
 }
 
-/// How configured files/tabs are ordered across a session.
+/// Legacy alias kept so older configs/UI strings still resolve.
+public enum ReadAndReviewWorkspace {
+    public static let workflowName = UniversalWorkspaceNavigation.workflowName
+}
+
+/// How configured / discovered targets are ordered.
 public enum ReviewTargetOrder: String, Equatable, Sendable, CaseIterable {
     case sequential
     case random
@@ -18,7 +23,7 @@ public enum ReviewTargetOrder: String, Equatable, Sendable, CaseIterable {
     }
 }
 
-/// Fixed navigation pacing (not for imitating human activity).
+/// Fixed navigation pacing (reading speed — not for imitating human activity).
 public enum NavigationSpeedPreset: String, Equatable, Sendable, CaseIterable, Identifiable {
     case slow
     case normal
@@ -36,7 +41,6 @@ public enum NavigationSpeedPreset: String, Equatable, Sendable, CaseIterable, Id
         }
     }
 
-    /// Default interval between navigation actions for this preset (seconds).
     public var defaultIntervalSeconds: Double {
         switch self {
         case .slow: return 0.85
@@ -47,21 +51,175 @@ public enum NavigationSpeedPreset: String, Equatable, Sendable, CaseIterable, Id
     }
 }
 
-/// User-configured read/review session (one workflow drives all files + tabs).
+/// Optional extras beyond the Targets allowlist when “discover open apps” is on.
+/// Editors/browsers always come from the Targets list — never every open IDE/browser.
+public struct DiscoveryScope: Equatable, Sendable {
+    /// Kept for config compatibility; editors are allowlist-only (see `NavigationAppPolicy`).
+    public var includeEditors: Bool
+    /// Kept for config compatibility; browsers are allowlist-only.
+    public var includeBrowsers: Bool
+    public var includeFinder: Bool
+    public var includePreview: Bool
+    public var includeOther: Bool
+
+    public init(
+        includeEditors: Bool = true,
+        includeBrowsers: Bool = true,
+        includeFinder: Bool = false,
+        includePreview: Bool = false,
+        includeOther: Bool = false
+    ) {
+        self.includeEditors = includeEditors
+        self.includeBrowsers = includeBrowsers
+        self.includeFinder = includeFinder
+        self.includePreview = includePreview
+        self.includeOther = includeOther
+    }
+
+    public static let `default` = DiscoveryScope()
+
+    public func allows(_ classification: TargetAppClass, bundleID: String) -> Bool {
+        switch classification {
+        case .editor: return includeEditors
+        case .browser: return includeBrowsers
+        case .finder: return includeFinder
+        case .generic:
+            if ApplicationClassifier.isPreview(bundleID: bundleID) {
+                return includePreview
+            }
+            return includeOther
+        }
+    }
+}
+
+/// Hard rules: Targets allowlist + never crawl system prefs / Waypoint / etc.
+public enum NavigationAppPolicy: Sendable {
+    /// Bundle IDs that must never be navigation targets (even if “other apps” is on).
+    public static let forbiddenBundleIDs: Set<String> = [
+        "com.twixrsolutions.waypoint",
+        "com.apple.systempreferences",
+        "com.apple.Preferences",
+        "com.apple.Setting.Accessibility",
+        "com.apple.preference.security",
+        "com.apple.controlcenter",
+        "com.apple.notificationcenterui",
+        "com.apple.dock",
+        "com.apple.loginwindow",
+        "com.apple.Spotlight",
+        "com.apple.TextInputMenuAgent",
+        "com.apple.siri.Siri",
+        "com.apple.Siri",
+        "com.apple.ActivityMonitor",
+    ]
+
+    public static func isForbidden(_ bundleID: String) -> Bool {
+        if forbiddenBundleIDs.contains(bundleID) { return true }
+        if bundleID.hasPrefix("com.apple.preference") { return true }
+        if bundleID.hasPrefix("com.apple.Setting") { return true }
+        if bundleID.hasPrefix("com.apple.systempreferences") { return true }
+        return false
+    }
+
+    /// Whether a live-discovered app may enter the queue.
+    /// Editors/browsers: only if listed in Targets. Finder/Preview/Other: scope flags only.
+    public static func allowsDiscovered(
+        _ app: DiscoveredApplication,
+        settings: ReviewWorkspaceSettings,
+        workflowTargets: [TargetApp]
+    ) -> Bool {
+        let bundleID = app.bundleID
+        if isForbidden(bundleID) { return false }
+
+        let allowlist = Set(workflowTargets.map(\.bundleID))
+        if allowlist.contains(bundleID) {
+            return true
+        }
+
+        switch app.classification {
+        case .editor, .browser:
+            // Never auto-add Xcode/Safari/etc. — must be an explicit Target.
+            return false
+        case .finder:
+            return settings.discovery.includeFinder
+        case .generic:
+            if ApplicationClassifier.isPreview(bundleID: bundleID) {
+                return settings.discovery.includePreview
+            }
+            return settings.discovery.includeOther
+        }
+    }
+}
+
+/// Pure bundle-id → class heuristics (no AppKit).
+public enum ApplicationClassifier: Sendable {
+    public static func classify(bundleID: String) -> TargetAppClass {
+        if isEditor(bundleID: bundleID) { return .editor }
+        if isBrowser(bundleID: bundleID) { return .browser }
+        if isFinder(bundleID: bundleID) { return .finder }
+        return .generic
+    }
+
+    public static func isEditor(bundleID: String) -> Bool {
+        bundleID.hasPrefix("com.microsoft.VSCode")
+            || bundleID.hasPrefix("com.visualstudio.code")
+            || bundleID.hasPrefix("com.todesktop.")
+            || bundleID == "com.apple.dt.Xcode"
+    }
+
+    public static func isBrowser(bundleID: String) -> Bool {
+        bundleID.hasPrefix("com.google.Chrome")
+            || bundleID == "com.apple.Safari"
+            || bundleID.hasPrefix("company.thebrowser.Browser") // Arc
+            || bundleID == "com.brave.Browser"
+            || bundleID == "org.mozilla.firefox"
+    }
+
+    public static func isFinder(bundleID: String) -> Bool {
+        bundleID == "com.apple.finder"
+    }
+
+    public static func isPreview(bundleID: String) -> Bool {
+        bundleID == "com.apple.Preview"
+    }
+}
+
+/// Snapshot of a user-facing app suitable for navigation planning (Domain-safe).
+public struct DiscoveredApplication: Equatable, Sendable, Identifiable {
+    public var id: String { bundleID }
+    public var bundleID: String
+    public var displayName: String
+    public var classification: TargetAppClass
+    public var isActive: Bool
+
+    public init(
+        bundleID: String,
+        displayName: String,
+        classification: TargetAppClass,
+        isActive: Bool
+    ) {
+        self.bundleID = bundleID
+        self.displayName = displayName
+        self.classification = classification
+        self.isActive = isActive
+    }
+}
+
+/// User settings for the universal navigation session.
 public struct ReviewWorkspaceSettings: Equatable, Sendable {
-    /// Absolute or `~`-expanded workspace root for relative file paths.
     public var workspacePath: String
-    /// Paths relative to workspace (or absolute). Opened read-only via AppKit.
     public var filePaths: [String]
-    /// Labels for configured Chrome tabs (identity for UI/logs; switching uses tab cycle).
     public var chromeTabLabels: [String]
     public var dwellMinSeconds: Double
     public var dwellMaxSeconds: Double
     public var speed: NavigationSpeedPreset
     public var customIntervalSeconds: Double
     public var targetOrder: ReviewTargetOrder
-    /// After the last target, start again until session duration ends.
     public var loopTargets: Bool
+    /// When true, discover running apps and merge them into the queue.
+    public var discoverRunningApps: Bool
+    public var discovery: DiscoveryScope
+    /// Re-scan running apps between targets during long sessions.
+    public var refreshTargetsBetweenDwells: Bool
 
     public init(
         workspacePath: String = "",
@@ -72,7 +230,10 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
         speed: NavigationSpeedPreset = .normal,
         customIntervalSeconds: Double = 0.35,
         targetOrder: ReviewTargetOrder = .sequential,
-        loopTargets: Bool = true
+        loopTargets: Bool = true,
+        discoverRunningApps: Bool = false,
+        discovery: DiscoveryScope = .default,
+        refreshTargetsBetweenDwells: Bool = false
     ) {
         self.workspacePath = workspacePath
         self.filePaths = filePaths
@@ -83,11 +244,13 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
         self.customIntervalSeconds = customIntervalSeconds
         self.targetOrder = targetOrder
         self.loopTargets = loopTargets
+        self.discoverRunningApps = discoverRunningApps
+        self.discovery = discovery
+        self.refreshTargetsBetweenDwells = refreshTargetsBetweenDwells
     }
 
     public static let `default` = ReviewWorkspaceSettings()
 
-    /// Clamps dwell range and ensures `min < max`.
     public mutating func normalize() {
         dwellMinSeconds = min(max(5, dwellMinSeconds), 600)
         dwellMaxSeconds = min(max(10, dwellMaxSeconds), 900)
@@ -126,7 +289,24 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
         Double.random(in: dwellMinSeconds...dwellMaxSeconds)
     }
 
-    /// Resolve a configured file against the workspace root.
+    /// Random reading time for one file/tab inside an app dwell (shorter than full target dwell).
+    public func randomFileDwellSeconds() -> Double {
+        let fileMin = max(4.0, dwellMinSeconds * 0.35)
+        let fileMax = max(fileMin + 2.0, min(dwellMaxSeconds, dwellMaxSeconds * 0.7))
+        return Double.random(in: fileMin...fileMax)
+    }
+
+    /// Pause after switching files/tabs before crawling the next one.
+    public func randomInterFilePauseSeconds() -> Double {
+        Double.random(in: 0.4...2.2)
+    }
+
+    /// Extra seconds granted when content still seems long (heuristic).
+    public func randomFileDwellExtensionSeconds() -> Double {
+        let span = max(4.0, (dwellMaxSeconds - dwellMinSeconds) * 0.3)
+        return Double.random(in: (span * 0.5)...span)
+    }
+
     public func resolvedFilePath(_ relativeOrAbsolute: String) -> String {
         let trimmed = relativeOrAbsolute.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("/") || trimmed.hasPrefix("~") {
@@ -138,15 +318,18 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
     }
 }
 
-/// One configured surface in the Read & Review queue.
+/// Normalized navigation surface in the universal queue.
 public enum ReviewTarget: Equatable, Sendable {
     case editorFile(path: String, displayName: String)
     case chromeTab(label: String, index: Int)
+    /// Discovered running app window — crawl with adapter-safe inert navigation only.
+    case discoveredApp(bundleID: String, displayName: String, classification: TargetAppClass)
 
     public var identity: String {
         switch self {
         case .editorFile(_, let displayName): return displayName
         case .chromeTab(let label, _): return label
+        case .discoveredApp(_, let displayName, _): return displayName
         }
     }
 
@@ -154,6 +337,14 @@ public enum ReviewTarget: Equatable, Sendable {
         switch self {
         case .editorFile: return "file"
         case .chromeTab: return "tab"
+        case .discoveredApp: return "application"
+        }
+    }
+
+    public var bundleIDHint: String? {
+        switch self {
+        case .discoveredApp(let bundleID, _, _): return bundleID
+        default: return nil
         }
     }
 }

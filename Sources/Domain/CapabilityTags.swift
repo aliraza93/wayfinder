@@ -83,7 +83,8 @@ public extension ActionKind {
                 mutatesText: false,
                 requiresFocusGuard: true,
                 verifiable: false,
-                primitive: .navigationChord
+                // Sidebar open is a targeted click (never Return / typing).
+                primitive: .targetedClick
             )
         case .openExistingFile:
             return CapabilityTags(

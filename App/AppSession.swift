@@ -287,6 +287,7 @@ final class AppSession: ObservableObject {
                     recorder: recorder,
                     resolver: resolver,
                     preconditionProbe: precondition,
+                    discoverySource: LiveApplicationDiscoverySource(),
                     engineHandler: { [weak self] engine in
                         await MainActor.run {
                             self?.activeEngine = engine
@@ -349,6 +350,7 @@ final class AppSession: ObservableObject {
                     let dwellAlloc = await engine.currentDwellAllocatedSeconds
                     let phase = await engine.reviewUIPhase
                     let action = await engine.currentActionKind
+                    let discovery = await engine.discoverySummary
                     await MainActor.run { [weak self] in
                         guard let self, self.isRunning else { return }
                         self.progressLines = self.reviewDashboardLines(
@@ -360,6 +362,7 @@ final class AppSession: ObservableObject {
                             dwellElapsed: dwellElapsed,
                             dwellAlloc: dwellAlloc,
                             action: action,
+                            discovery: discovery,
                             live: self.runVM.live
                         )
                     }
@@ -513,6 +516,7 @@ final class AppSession: ObservableObject {
         dwellElapsed: Double?,
         dwellAlloc: Double?,
         action: String?,
+        discovery: String,
         live: RunLiveStatus
     ) -> [String] {
         var lines: [String] = [
@@ -538,6 +542,9 @@ final class AppSession: ObservableObject {
             lines.append("Session: \(RunLiveStatus.formatClock(live.elapsedSeconds)) / until stopped")
         }
         lines.append("Targets completed: \(completed)")
+        if !discovery.isEmpty {
+            lines.append("Discovered: \(discovery)")
+        }
         if let action, !action.isEmpty {
             lines.append("Current action: \(action)")
         }

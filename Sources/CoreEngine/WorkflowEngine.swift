@@ -16,13 +16,14 @@ public actor WorkflowEngine {
     public private(set) var runStartedAt: Date?
     public private(set) var configuredDurationSeconds: Double?
     public private(set) var currentActionKind: String?
-    /// Live Read & Review dashboard fields (identity only — never body text).
+    /// Live Universal Workspace Navigation dashboard fields (identity only — never body text).
     public private(set) var currentReviewIdentity: String?
     public private(set) var nextReviewIdentity: String?
     public private(set) var reviewTargetsCompleted: Int = 0
     public private(set) var currentDwellElapsedSeconds: Double?
     public private(set) var currentDwellAllocatedSeconds: Double?
     public private(set) var reviewUIPhase: String = "idle"
+    public private(set) var discoverySummary: String = ""
 
     /// Frontmost workflow target for the current step (updated by activate / return).
     private var activeTarget: TargetApp?
@@ -38,6 +39,7 @@ public actor WorkflowEngine {
     private let recorder: RunRecorder
     private let preconditionProbe: any RunPreconditionProbe
     private let focusRestorer: any FocusRestorer
+    private let discoverySource: any ApplicationDiscoverySource
 
     public init(
         safety: SafetyPolicy = SafetyPolicy(),
@@ -46,7 +48,8 @@ public actor WorkflowEngine {
         timing: TimingPolicy,
         recorder: RunRecorder = RunRecorder(),
         preconditionProbe: any RunPreconditionProbe = AlwaysReadyProbe(),
-        focusRestorer: any FocusRestorer = NullFocusRestorer()
+        focusRestorer: any FocusRestorer = NullFocusRestorer(),
+        discoverySource: any ApplicationDiscoverySource = EmptyApplicationDiscovery()
     ) {
         self.safety = safety
         self.executor = executor
@@ -55,6 +58,7 @@ public actor WorkflowEngine {
         self.recorder = recorder
         self.preconditionProbe = preconditionProbe
         self.focusRestorer = focusRestorer
+        self.discoverySource = discoverySource
     }
 
     public func runEvents() -> [RunEvent] {
@@ -159,9 +163,30 @@ public actor WorkflowEngine {
                 if reviewSettings.filePaths.isEmpty, !workflow.reviewFilePaths.isEmpty {
                     reviewSettings.filePaths = workflow.reviewFilePaths
                 }
+                let initialDiscovery = reviewSettings.discoverRunningApps
+                    ? discoverySource.discoverApplications()
+                    : []
+                if reviewSettings.discoverRunningApps {
+                    mergeDiscoveredIntoKnown(initialDiscovery)
+                }
                 var controller = TimedReviewNavigation.makeController(
                     settings: reviewSettings,
-                    targets: knownTargets
+                    targets: knownTargets,
+                    discovered: initialDiscovery
+                )
+                discoverySummary = Self.formatDiscovery(controller.discoveryCounts)
+                reviewUIPhase = "discovering"
+                recordMeta(
+                    actionKind: "applicationsDiscovered",
+                    targetBundleID: target.bundleID,
+                    result: .completed,
+                    identity: "\(initialDiscovery.count) apps"
+                )
+                recordMeta(
+                    actionKind: "targetsDiscovered",
+                    targetBundleID: target.bundleID,
+                    result: .completed,
+                    identity: "\(controller.queue.count) targets"
                 )
                 reviewUIPhase = "running"
                 recordMeta(
@@ -214,18 +239,45 @@ public actor WorkflowEngine {
                             actionKind: "targetCompleted",
                             targetBundleID: activeTarget?.bundleID ?? "",
                             result: .completed,
-                            identity: controller.current?.identity
+                            identity: controller.completedIdentity ?? controller.current?.identity
                         )
                         controller.recordMetaCompleted = false
+                        controller.completedIdentity = nil
+                    }
+
+                    if controller.needsDiscoveryRefresh {
+                        reviewUIPhase = "refreshing"
+                        let refreshed = reviewSettings.discoverRunningApps
+                            ? discoverySource.discoverApplications()
+                            : []
+                        if reviewSettings.discoverRunningApps {
+                            mergeDiscoveredIntoKnown(refreshed)
+                        }
+                        controller.applyDiscoveryRefresh(
+                            discovered: refreshed,
+                            workflowTargets: knownTargets
+                        )
+                        discoverySummary = Self.formatDiscovery(controller.discoveryCounts)
+                        recordMeta(
+                            actionKind: "targetsRefreshed",
+                            targetBundleID: activeTarget?.bundleID ?? "",
+                            result: .completed,
+                            identity: "\(controller.queue.count) targets"
+                        )
+                        reviewUIPhase = "running"
+                        continue
                     }
 
                     guard let pick = controller.nextPick(now: timing.clock.now) else {
                         break outer
                     }
 
-                    // Before open/switch, focus may need retarget — activateApp handled in executeStep.
+                    let isActivate: Bool
                     if case .activateApp = pick.action {
+                        isActivate = true
                         reviewUIPhase = "switchingTarget"
+                    } else {
+                        isActivate = false
                     }
 
                     currentReviewIdentity = controller.current?.identity ?? pick.identity
@@ -247,8 +299,8 @@ public actor WorkflowEngine {
 
                     let step = Step(
                         action: pick.action,
-                        timeoutSeconds: 4,
-                        retryPolicy: RetryPolicy(maxRetries: 0),
+                        timeoutSeconds: isActivate ? 10 : 4,
+                        retryPolicy: RetryPolicy(maxRetries: isActivate ? 2 : 0),
                         onError: .skip
                     )
                     currentActionKind = ActionKindLabel.label(for: step.action)
@@ -269,7 +321,19 @@ public actor WorkflowEngine {
                             state = .error(lastRecoveryMessage!)
                         }
                         break outer
-                    case .completed, .skipped, .denied, .failed:
+                    case .skipped, .denied, .failed:
+                        if isActivate {
+                            recordMeta(
+                                actionKind: "activateFailedAdvance",
+                                targetBundleID: activeTarget?.bundleID ?? "",
+                                result: .failed,
+                                identity: pick.identity
+                            )
+                            // Do not crawl the wrong app — jump to the next allowlisted target.
+                            controller.abandonCurrentTarget(now: timing.clock.now)
+                        }
+                        continue
+                    case .completed:
                         continue
                     }
                 }
@@ -574,7 +638,28 @@ public actor WorkflowEngine {
         if let known = knownTargets.first(where: { $0.bundleID == bundleID }) {
             return known
         }
-        return TargetApp(bundleID: bundleID, classification: .generic)
+        let classified = TargetApp(
+            bundleID: bundleID,
+            classification: ApplicationClassifier.classify(bundleID: bundleID)
+        )
+        knownTargets.append(classified)
+        return classified
+    }
+
+    private func mergeDiscoveredIntoKnown(_ apps: [DiscoveredApplication]) {
+        for app in apps {
+            if knownTargets.contains(where: { $0.bundleID == app.bundleID }) { continue }
+            knownTargets.append(
+                TargetApp(bundleID: app.bundleID, classification: app.classification)
+            )
+        }
+    }
+
+    private static func formatDiscovery(_ counts: [String: Int]) -> String {
+        counts
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key): \($0.value)" }
+            .joined(separator: ", ")
     }
 
     private func record(action: ActionKind, target: TargetApp, result: RunEventResult) {

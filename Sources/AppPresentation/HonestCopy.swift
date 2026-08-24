@@ -6,14 +6,15 @@ public enum HonestCopy {
     public static let tagline = "Hands-free navigation. Never touches your work."
 
     public static let does = """
-    Read & Review Workspace is one workflow that walks configured Cursor files and Chrome tabs: \
-    focus app → open/select surface → crawl content for a configured dwell → next target — \
-    until the session duration ends.
+    Universal Workspace Navigation crawls only the apps you add as Targets (e.g. Cursor + Chrome). \
+    Optionally it can also include open Finder/Preview/other apps you enable — never System Settings. \
+    Focus → select surface → crawl for a dwell → next, until the session ends.
     """
 
     public static let neverDoes = """
     It never types into your files, presses Return/Delete to edit, pastes, saves, formats, \
-    refactors, or runs destructive editor commands. It does not fabricate activity or capture \
+    refactors, or runs destructive editor commands. Opening another explorer file uses a \
+    sidebar click only — never Return in the editor. It does not fabricate activity or capture \
     document body content.
     """
 
@@ -24,9 +25,9 @@ public enum HonestCopy {
     """
 
     public static let tabFileLimits = """
-    Configure workspace files and Chrome tab labels, dwell min/max (default 30s–3m), and navigation \
-    speed. Target order can be sequential or random. Opening files is allowed; editing is not. \
-    Chrome tabs use allowlisted Ctrl+Tab (labels are for identity/UI).
+    Configure workspace files and Chrome tab labels when you want fixed queues; otherwise Targets \
+    drive Cursor↔Chrome. Per-file reading time adapts: short content switches sooner, longer \
+    skims stay longer, with a random pause between file/tab changes.
     """
 }
 

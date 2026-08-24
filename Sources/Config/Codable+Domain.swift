@@ -650,9 +650,14 @@ extension ReviewWorkspaceSettings: Codable {
                 "workspacePath", "filePaths", "chromeTabLabels",
                 "dwellMinSeconds", "dwellMaxSeconds",
                 "speed", "customIntervalSeconds", "targetOrder", "loopTargets",
+                "discoverRunningApps", "discovery", "refreshTargetsBetweenDwells",
             ],
             path: "review"
         )
+        let discovery = try container.decodeIfPresent(
+            DiscoveryScope.self,
+            forKey: StrictCodingKey(stringValue: "discovery")
+        ) ?? .default
         var settings = ReviewWorkspaceSettings(
             workspacePath: (try? container.decode(String.self, forKey: StrictCodingKey(stringValue: "workspacePath"))) ?? "",
             filePaths: try container.decodeIfPresent([String].self, forKey: StrictCodingKey(stringValue: "filePaths")) ?? [],
@@ -662,7 +667,10 @@ extension ReviewWorkspaceSettings: Codable {
             speed: (try? container.decode(NavigationSpeedPreset.self, forKey: StrictCodingKey(stringValue: "speed"))) ?? .normal,
             customIntervalSeconds: try StrictJSON.decodeIfPresentDouble(container, "customIntervalSeconds") ?? 0.35,
             targetOrder: (try? container.decode(ReviewTargetOrder.self, forKey: StrictCodingKey(stringValue: "targetOrder"))) ?? .sequential,
-            loopTargets: try StrictJSON.decodeIfPresentBool(container, "loopTargets") ?? true
+            loopTargets: try StrictJSON.decodeIfPresentBool(container, "loopTargets") ?? true,
+            discoverRunningApps: try StrictJSON.decodeIfPresentBool(container, "discoverRunningApps") ?? false,
+            discovery: discovery,
+            refreshTargetsBetweenDwells: try StrictJSON.decodeIfPresentBool(container, "refreshTargetsBetweenDwells") ?? false
         )
         settings.normalize()
         self = settings
@@ -679,6 +687,39 @@ extension ReviewWorkspaceSettings: Codable {
         try container.encode(customIntervalSeconds, forKey: StrictCodingKey(stringValue: "customIntervalSeconds"))
         try container.encode(targetOrder, forKey: StrictCodingKey(stringValue: "targetOrder"))
         try container.encode(loopTargets, forKey: StrictCodingKey(stringValue: "loopTargets"))
+        try container.encode(discoverRunningApps, forKey: StrictCodingKey(stringValue: "discoverRunningApps"))
+        try container.encode(discovery, forKey: StrictCodingKey(stringValue: "discovery"))
+        try container.encode(refreshTargetsBetweenDwells, forKey: StrictCodingKey(stringValue: "refreshTargetsBetweenDwells"))
+    }
+}
+
+extension DiscoveryScope: Codable {
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: StrictCodingKey.self)
+        try StrictJSON.requireKeys(
+            container,
+            allowed: [
+                "includeEditors", "includeBrowsers", "includeFinder",
+                "includePreview", "includeOther",
+            ],
+            path: "review.discovery"
+        )
+        self.init(
+            includeEditors: try StrictJSON.decodeIfPresentBool(container, "includeEditors") ?? true,
+            includeBrowsers: try StrictJSON.decodeIfPresentBool(container, "includeBrowsers") ?? true,
+            includeFinder: try StrictJSON.decodeIfPresentBool(container, "includeFinder") ?? false,
+            includePreview: try StrictJSON.decodeIfPresentBool(container, "includePreview") ?? false,
+            includeOther: try StrictJSON.decodeIfPresentBool(container, "includeOther") ?? false
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: StrictCodingKey.self)
+        try container.encode(includeEditors, forKey: StrictCodingKey(stringValue: "includeEditors"))
+        try container.encode(includeBrowsers, forKey: StrictCodingKey(stringValue: "includeBrowsers"))
+        try container.encode(includeFinder, forKey: StrictCodingKey(stringValue: "includeFinder"))
+        try container.encode(includePreview, forKey: StrictCodingKey(stringValue: "includePreview"))
+        try container.encode(includeOther, forKey: StrictCodingKey(stringValue: "includeOther"))
     }
 }
 

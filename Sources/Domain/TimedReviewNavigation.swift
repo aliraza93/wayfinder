@@ -1,24 +1,14 @@
 import Foundation
 
-public struct TimedReviewPick: Equatable, Sendable {
-    public var action: ActionKind
-    public var gapSeconds: Double
-    /// Structured log label (e.g. targetSelected, fileOpened) — never document body.
-    public var metaKind: String?
-    /// User-configured identity (file name / tab label).
-    public var identity: String?
+/// Injected live discovery for the universal planner. Pure Domain — AppControl implements.
+public protocol ApplicationDiscoverySource: Sendable {
+    func discoverApplications() -> [DiscoveredApplication]
+}
 
-    public init(
-        action: ActionKind,
-        gapSeconds: Double,
-        metaKind: String? = nil,
-        identity: String? = nil
-    ) {
-        self.action = action
-        self.gapSeconds = gapSeconds
-        self.metaKind = metaKind
-        self.identity = identity
-    }
+/// No-op discovery (tests / headless).
+public struct EmptyApplicationDiscovery: ApplicationDiscoverySource {
+    public init() {}
+    public func discoverApplications() -> [DiscoveredApplication] { [] }
 }
 
 /// Legacy helpers + bridge into `ReviewSessionController` for timed continuous runs.
@@ -70,7 +60,8 @@ public enum TimedReviewNavigation {
 
     public static func makeController(
         settings: ReviewWorkspaceSettings,
-        targets: [TargetApp]
+        targets: [TargetApp],
+        discovered: [DiscoveredApplication] = []
     ) -> ReviewSessionController {
         var normalized = settings
         normalized.normalize()
@@ -79,7 +70,9 @@ public enum TimedReviewNavigation {
         let selector = ReviewTargetSelector(
             settings: normalized,
             editorBundleID: editorID,
-            browserBundleID: browserID
+            browserBundleID: browserID,
+            discovered: discovered,
+            workflowTargets: targets
         )
         return ReviewSessionController(
             settings: normalized,

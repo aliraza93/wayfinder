@@ -4,14 +4,15 @@
 
 ## What Waypoint is
 
-Waypoint is a native macOS menu-bar app that runs user-defined, **read-only navigation workflows** across already-open apps — especially **Cursor** (or VS Code-class editors) and **Google Chrome** — for legitimate reading/review:
+Waypoint is a native macOS menu-bar app that runs **read-only navigation** — preferably as one **Universal Workspace Navigation** workflow that discovers suitable open apps and crawls configured files/tabs (and optionally Finder, Preview, and other apps via a conservative generic adapter):
 
 - Focus / activate already-running apps and windows
 - Open or switch to **existing** workspace files the user configured
 - Switch among **existing** editor tabs / Chrome tabs when adapters can do so safely
 - Scroll, page, and arrow-key navigate within the focused document or page
+- Discover and refresh navigation targets during long sessions
 - Timed / looped runs with Start · Pause · Resume · Stop
-- Return focus between Cursor and Chrome as the workflow requires
+- Return focus between apps as the workflow requires
 
 **Tagline:** *Hands-free navigation. Never touches your work.*
 
@@ -54,9 +55,11 @@ When the owner asks for long-running Cursor + Chrome reading workflows, agents *
 |------|---------------------|
 | Cursor / editor | Detect running app; activate; open/switch **existing** configured files; scroll/page/arrows in the focused editor; switch existing editor tabs via adapter |
 | Chrome | Detect running app; activate; switch **existing** tabs via adapter; scroll/page in the focused tab; return to Cursor |
+| Discovery | Enumerate visible user-facing apps; classify; merge into a single navigation queue; refresh mid-session |
+| Generic / Finder / Preview | Conservative activate + scroll/page/arrows only when no specialized adapter |
 | Engine | Multi-step workflows, duration / until-stopped, pause/resume/stop, retarget between apps mid-run |
 | Adapters | Keep app-specific logic in `Adapters` / `AppControl` — not hard-coded inside the pure engine |
-| UI | Targets, duration, files/tabs config, live status, hot-keys |
+| UI | Universal workflow settings, duration, discovery scope, files/tabs, live status, hot-keys |
 | Safety | Explicit allowlist; `mutatesText` always false for every `ActionKind` |
 
 Older roadmap text that said “no `switchTab` / no Cmd chords ever” described an **MVP freeze**, not a permanent product ban. Prefer adapter-scoped, allowlisted navigation over refusing the feature.

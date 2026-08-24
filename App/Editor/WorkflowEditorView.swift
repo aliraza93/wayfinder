@@ -195,7 +195,7 @@ struct WorkflowEditorView: View {
                     )
                 }
 
-                Text("Session length for Read & Review Workspace. Dwell per file/tab is configured below.")
+                Text("Session length for Universal Workspace Navigation. Dwell and discovery are configured below.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -206,6 +206,30 @@ struct WorkflowEditorView: View {
     private var reviewSessionCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
+                Text("Allowed apps")
+                    .font(.headline)
+                Text("Only apps in Targets above are crawled. Turn on optional open-app extras below if you want Finder/Preview/others too.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Toggle("Also crawl other open apps", isOn: $model.discoverRunningApps)
+                if model.discoverRunningApps {
+                    Toggle("Finder", isOn: $model.includeFinder)
+                    Toggle("Preview", isOn: $model.includePreview)
+                    Toggle("Other applications (never Settings)", isOn: $model.includeOther)
+                    Toggle("Refresh open apps between dwells", isOn: $model.refreshTargetsBetweenDwells)
+                    Text("Does not auto-add Xcode or other editors/browsers — add those as Targets if you want them.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Extras use conservative scroll/page only. Never clicks random coordinates.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Divider()
+
                 Text("Target dwell & navigation")
                     .font(.headline)
                 HStack {
@@ -254,6 +278,11 @@ struct WorkflowEditorView: View {
                 Toggle("Loop targets until session ends", isOn: $model.loopTargets)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: model.discoverRunningApps) { _ in model.pushReviewSettings() }
+            .onChange(of: model.includeFinder) { _ in model.pushReviewSettings() }
+            .onChange(of: model.includePreview) { _ in model.pushReviewSettings() }
+            .onChange(of: model.includeOther) { _ in model.pushReviewSettings() }
+            .onChange(of: model.refreshTargetsBetweenDwells) { _ in model.pushReviewSettings() }
             .onChange(of: model.dwellMinSeconds) { _ in model.pushReviewSettings() }
             .onChange(of: model.dwellMaxSeconds) { _ in model.pushReviewSettings() }
             .onChange(of: model.speedPreset) { _ in model.pushReviewSettings() }
@@ -516,6 +545,13 @@ final class WorkflowEditorUIModel: ObservableObject {
     @Published var customIntervalSeconds: Double = 0.35
     @Published var targetOrder: ReviewTargetOrder = .sequential
     @Published var loopTargets = true
+    @Published var discoverRunningApps = true
+    @Published var includeEditors = true
+    @Published var includeBrowsers = true
+    @Published var includeFinder = true
+    @Published var includePreview = true
+    @Published var includeOther = false
+    @Published var refreshTargetsBetweenDwells = true
     @Published var workspacePath = ""
     @Published var fileDraft = ""
     @Published var tabDraft = ""
@@ -607,6 +643,15 @@ final class WorkflowEditorUIModel: ObservableObject {
         settings.customIntervalSeconds = customIntervalSeconds
         settings.targetOrder = targetOrder
         settings.loopTargets = loopTargets
+        settings.discoverRunningApps = discoverRunningApps
+        settings.discovery = DiscoveryScope(
+            includeEditors: true,
+            includeBrowsers: true,
+            includeFinder: includeFinder,
+            includePreview: includePreview,
+            includeOther: includeOther
+        )
+        settings.refreshTargetsBetweenDwells = refreshTargetsBetweenDwells
         viewModel.setReviewSettings(settings)
         syncFromVM(selectedName: selectedSavedName)
     }
@@ -782,6 +827,13 @@ final class WorkflowEditorUIModel: ObservableObject {
         customIntervalSeconds = viewModel.draft.review.customIntervalSeconds
         targetOrder = viewModel.draft.review.targetOrder
         loopTargets = viewModel.draft.review.loopTargets
+        discoverRunningApps = viewModel.draft.review.discoverRunningApps
+        includeEditors = viewModel.draft.review.discovery.includeEditors
+        includeBrowsers = viewModel.draft.review.discovery.includeBrowsers
+        includeFinder = viewModel.draft.review.discovery.includeFinder
+        includePreview = viewModel.draft.review.discovery.includePreview
+        includeOther = viewModel.draft.review.discovery.includeOther
+        refreshTargetsBetweenDwells = viewModel.draft.review.refreshTargetsBetweenDwells
         workspacePath = viewModel.draft.review.workspacePath
         filePaths = viewModel.draft.review.filePaths
         tabLabels = viewModel.draft.review.chromeTabLabels
