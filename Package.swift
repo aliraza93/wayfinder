@@ -28,7 +28,11 @@ let package = Package(
             dependencies: ["Domain"],
             path: "Sources/Config"
         ),
-        .target(name: "Safety", path: "Sources/Safety"),
+        .target(
+            name: "Safety",
+            dependencies: ["Domain"],
+            path: "Sources/Safety"
+        ),
         .target(name: "CoreEngine", path: "Sources/CoreEngine"),
         .target(name: "Timing", path: "Sources/Timing"),
 
@@ -50,6 +54,11 @@ let package = Package(
             name: "ConfigTests",
             dependencies: ["Config", "Domain"],
             path: "Tests/ConfigTests"
+        ),
+        .testTarget(
+            name: "SafetyTests",
+            dependencies: ["Safety", "Domain"],
+            path: "Tests/SafetyTests"
         ),
     ]
 )
