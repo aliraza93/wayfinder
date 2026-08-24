@@ -1,0 +1,348 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AA0000000000000000000001 /* WaypointApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000010 /* WaypointApp.swift */; };
+		AA0000000000000000000002 /* RootMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000011 /* RootMenu.swift */; };
+		AA0000000000000000000003 /* Domain in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000030 /* Domain */; };
+		AA0000000000000000000004 /* Config in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000031 /* Config */; };
+		AA0000000000000000000005 /* Safety in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000032 /* Safety */; };
+		AA0000000000000000000006 /* CoreEngine in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000033 /* CoreEngine */; };
+		AA0000000000000000000007 /* Actions in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000034 /* Actions */; };
+		AA0000000000000000000008 /* Observability in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000035 /* Observability */; };
+		AA0000000000000000000009 /* Accessibility in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000036 /* Accessibility */; };
+		AA000000000000000000000A /* InputSynthesis in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000037 /* InputSynthesis */; };
+		AA000000000000000000000B /* AppControl in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000038 /* AppControl */; };
+		AA000000000000000000000C /* Permissions in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000039 /* Permissions */; };
+		AA000000000000000000000D /* Adapters in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000003A /* Adapters */; };
+		AA000000000000000000000E /* Timing in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000003B /* Timing */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		AA0000000000000000000010 /* WaypointApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaypointApp.swift; sourceTree = "<group>"; };
+		AA0000000000000000000011 /* RootMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootMenu.swift; sourceTree = "<group>"; };
+		AA0000000000000000000012 /* Waypoint.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Waypoint.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AA0000000000000000000020 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000000000000000000003 /* Domain in Frameworks */,
+				AA0000000000000000000004 /* Config in Frameworks */,
+				AA0000000000000000000005 /* Safety in Frameworks */,
+				AA0000000000000000000006 /* CoreEngine in Frameworks */,
+				AA0000000000000000000007 /* Actions in Frameworks */,
+				AA0000000000000000000008 /* Observability in Frameworks */,
+				AA0000000000000000000009 /* Accessibility in Frameworks */,
+				AA000000000000000000000A /* InputSynthesis in Frameworks */,
+				AA000000000000000000000B /* AppControl in Frameworks */,
+				AA000000000000000000000C /* Permissions in Frameworks */,
+				AA000000000000000000000D /* Adapters in Frameworks */,
+				AA000000000000000000000E /* Timing in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AA0000000000000000000040 /* Root */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000041 /* App */,
+				AA0000000000000000000043 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000041 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000010 /* WaypointApp.swift */,
+				AA0000000000000000000042 /* MenuBar */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000042 /* MenuBar */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000011 /* RootMenu.swift */,
+			);
+			path = MenuBar;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000043 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000012 /* Waypoint.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA0000000000000000000050 /* Waypoint */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000070 /* Build configuration list for PBXNativeTarget "Waypoint" */;
+			buildPhases = (
+				AA0000000000000000000051 /* Sources */,
+				AA0000000000000000000020 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Waypoint;
+			packageProductDependencies = (
+				AA0000000000000000000030 /* Domain */,
+				AA0000000000000000000031 /* Config */,
+				AA0000000000000000000032 /* Safety */,
+				AA0000000000000000000033 /* CoreEngine */,
+				AA0000000000000000000034 /* Actions */,
+				AA0000000000000000000035 /* Observability */,
+				AA0000000000000000000036 /* Accessibility */,
+				AA0000000000000000000037 /* InputSynthesis */,
+				AA0000000000000000000038 /* AppControl */,
+				AA0000000000000000000039 /* Permissions */,
+				AA000000000000000000003A /* Adapters */,
+				AA000000000000000000003B /* Timing */,
+			);
+			productName = Waypoint;
+			productReference = AA0000000000000000000012 /* Waypoint.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA0000000000000000000060 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+			};
+			buildConfigurationList = AA0000000000000000000071 /* Build configuration list for PBXProject "Waypoint" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AA0000000000000000000040 /* Root */;
+			packageReferences = (
+				AA000000000000000000003C /* XCLocalSwiftPackageReference "." */,
+			);
+			productRefGroup = AA0000000000000000000043 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA0000000000000000000050 /* Waypoint */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA0000000000000000000051 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000000000000000000001 /* WaypointApp.swift in Sources */,
+				AA0000000000000000000002 /* RootMenu.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AA0000000000000000000080 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000081 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		AA0000000000000000000082 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Waypoint;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.twixrsolutions.waypoint;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000083 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Waypoint;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.twixrsolutions.waypoint;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA0000000000000000000070 /* Build configuration list for PBXNativeTarget "Waypoint" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000082 /* Debug */,
+				AA0000000000000000000083 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000071 /* Build configuration list for PBXProject "Waypoint" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000080 /* Debug */,
+				AA0000000000000000000081 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		AA000000000000000000003C /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AA0000000000000000000030 /* Domain */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = Domain;
+		};
+		AA0000000000000000000031 /* Config */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = Config;
+		};
+		AA0000000000000000000032 /* Safety */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = Safety;
+		};
+		AA0000000000000000000033 /* CoreEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = CoreEngine;
+		};
+		AA0000000000000000000034 /* Actions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = Actions;
+		};
+		AA0000000000000000000035 /* Observability */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = Observability;
+		};
+		AA0000000000000000000036 /* Accessibility */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = Accessibility;
+		};
+		AA0000000000000000000037 /* InputSynthesis */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = InputSynthesis;
+		};
+		AA0000000000000000000038 /* AppControl */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = AppControl;
+		};
+		AA0000000000000000000039 /* Permissions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = Permissions;
+		};
+		AA000000000000000000003A /* Adapters */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = Adapters;
+		};
+		AA000000000000000000003B /* Timing */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
+			productName = Timing;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = AA0000000000000000000060 /* Project object */;
+}
