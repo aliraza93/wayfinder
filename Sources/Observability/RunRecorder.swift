@@ -19,11 +19,20 @@ public final class RunRecorder: @unchecked Sendable {
         return events
     }
 
-    /// JSONL with fixed field order: timestamp, actionKind, targetBundleID, result.
+    /// JSONL with fixed field order; optional identity when present.
     public func jsonl(dateFormatter: ISO8601DateFormatter = ISO8601DateFormatter()) -> String {
         snapshot().map { event in
             let ts = dateFormatter.string(from: event.timestamp)
-            return "{\"timestamp\":\"\(ts)\",\"actionKind\":\"\(event.actionKind)\",\"targetBundleID\":\"\(event.targetBundleID)\",\"result\":\"\(event.result.rawValue)\"}"
+            var line =
+                "{\"timestamp\":\"\(ts)\",\"actionKind\":\"\(event.actionKind)\",\"targetBundleID\":\"\(event.targetBundleID)\",\"result\":\"\(event.result.rawValue)\""
+            if let identity = event.identity, !identity.isEmpty {
+                let escaped = identity
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "\"", with: "\\\"")
+                line += ",\"identity\":\"\(escaped)\""
+            }
+            line += "}"
+            return line
         }.joined(separator: "\n")
     }
 }

@@ -138,8 +138,8 @@ final class RecoveryTests: XCTestCase {
         let log = await executor.log
         XCTAssertEqual(log.count, 0)
         let events = await engine.runEvents()
-        XCTAssertEqual(events.first?.result, .failed)
-        XCTAssertNotEqual(events.first?.result, .skipped)
+        XCTAssertTrue(events.contains { $0.actionKind == "scroll" && $0.result == .failed })
+        XCTAssertFalse(events.contains { $0.result == .skipped })
         let message = await engine.lastRecoveryMessage
         XCTAssertTrue(message?.contains("accessibility") == true)
     }
@@ -283,7 +283,7 @@ final class RecoveryTests: XCTestCase {
         let message = await engine.lastRecoveryMessage
         XCTAssertTrue(message?.lowercased().contains("timeout") == true || message?.contains("wait") == true)
         let events = await engine.runEvents()
-        XCTAssertEqual(events.first?.result, .failed)
+        XCTAssertTrue(events.contains { $0.actionKind == "wait" && $0.result == .failed })
         let state = await engine.state
         XCTAssertEqual(state, .idle)
     }

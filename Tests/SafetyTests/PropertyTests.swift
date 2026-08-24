@@ -18,8 +18,13 @@ final class PropertyTests: XCTestCase {
         let actions: [ActionKind] = [
             .activateApp(bundleID: "com.example.app"),
             .switchWindow(direction: .next),
+            .switchTab(direction: .next),
             .scroll(direction: .down, amount: 1),
             .pageNavigate(.pageDown),
+            .arrowNavigate(direction: .down, presses: 1, intervalSeconds: 0.5),
+            .highlightNavigate(direction: .up),
+            .contentClick,
+            .explorerFileSwitch(direction: .previous),
             .openExistingFile(path: "/tmp/x"),
             .wait(seconds: 1),
             .returnToPrevious,
@@ -56,12 +61,15 @@ final class PropertyTests: XCTestCase {
     }
 
     func testOnlyScrollWheelAndInertKeyAreSyntheticInputPrimitives() {
-        // Property: if an action is allowed and would emit synthetic input, its primitive
-        // must be scrollWheel or inertKey. appControl/none are non-synthetic paths.
+        // Property: allowed synthetic input must be an allowlisted primitive kind.
         let policy = SafetyPolicy()
         let actions: [ActionKind] = [
             .scroll(direction: .up, amount: 1),
             .pageNavigate(.end),
+            .arrowNavigate(direction: .up, presses: 1, intervalSeconds: 0),
+            .switchTab(direction: .next),
+            .highlightNavigate(direction: .down),
+            .contentClick,
             .activateApp(bundleID: "x"),
             .wait(seconds: 0.1),
         ]
@@ -72,7 +80,7 @@ final class PropertyTests: XCTestCase {
             let decision = policy.validate(action: action, target: target)
             XCTAssertEqual(decision, .allow)
             switch tags.primitive {
-            case .scrollWheel, .inertKey:
+            case .scrollWheel, .inertKey, .navigationChord, .targetedClick:
                 XCTAssertTrue(true)
             case .appControl:
                 XCTAssertTrue(tags.verifiable)

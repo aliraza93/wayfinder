@@ -2,16 +2,16 @@
 
 ## Summary
 
-Waypoint runs **on your Mac only**. v1 makes **no outbound network calls**. It navigates already-open apps with inert input (scroll wheel and a small allowlisted key set) and records a **content-free** run log.
+Waypoint runs **on your Mac only**. Core automation makes **no outbound network calls**. It navigates already-open apps with read-only navigation (scroll, inert keys, allowlisted tab/file navigation, AppKit activate/open-existing-file) and records a **privacy-respecting** run log.
 
 ## Data Waypoint stores
 
 | What | Where | Contents |
 |------|--------|----------|
-| Workflows | `~/Library/Application Support/Waypoint/workflows.json` | Workflow names, target bundle IDs, step kinds/parameters you configured |
-| Run timeline / export | In-memory during a run; export only what you choose to save | `{timestamp, actionKind, targetBundleID, result}` only |
+| Workflows | `~/Library/Application Support/Waypoint/workflows.json` | Workflow names, target bundle IDs, step kinds/parameters you configured (including file paths / tab labels you enter) |
+| Run timeline / export | In-memory during a run; export only what you choose to save | `{timestamp, actionKind, targetBundleID, result}` plus optional identity metadata you configured (e.g. relative file path, tab label) — never document body text |
 
-Waypoint does **not** store window titles as free-form surveillance, document text, keystroke content, screenshots, or file contents in logs.
+Waypoint does **not** store document text, keystroke streams of typed content, screenshots, or file contents in logs.
 
 ## Permissions
 

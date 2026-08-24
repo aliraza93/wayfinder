@@ -17,6 +17,8 @@ public struct SynthesizedEvent: Equatable, Sendable {
     public enum Kind: Equatable, Sendable {
         case scroll(deltaY: Int32)
         case inertKey(keyCode: UInt16, keyDown: Bool)
+        case navigationChord(keyCode: UInt16, control: Bool, shift: Bool, option: Bool, command: Bool, keyDown: Bool)
+        case click(x: Double, y: Double, mouseDown: Bool)
     }
 
     public var kind: Kind
@@ -52,8 +54,31 @@ public struct CGEventPoster: EventPoster {
             }
         case .inertKey(let keyCode, let keyDown):
             if let cg = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: keyDown) {
-                // No modifier flags — chords are forbidden.
+                // No modifier flags — chords use `.navigationChord`.
                 cg.flags = []
+                SelfEventTag.apply(to: cg)
+                cg.post(tap: .cghidEventTap)
+            }
+        case .navigationChord(let keyCode, let control, let shift, let option, let command, let keyDown):
+            if let cg = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: keyDown) {
+                var flags: CGEventFlags = []
+                if control { flags.insert(.maskControl) }
+                if shift { flags.insert(.maskShift) }
+                if option { flags.insert(.maskAlternate) }
+                if command { flags.insert(.maskCommand) }
+                cg.flags = flags
+                SelfEventTag.apply(to: cg)
+                cg.post(tap: .cghidEventTap)
+            }
+        case .click(let x, let y, let mouseDown):
+            let point = CGPoint(x: x, y: y)
+            let type: CGEventType = mouseDown ? .leftMouseDown : .leftMouseUp
+            if let cg = CGEvent(
+                mouseEventSource: nil,
+                mouseType: type,
+                mouseCursorPosition: point,
+                mouseButton: .left
+            ) {
                 SelfEventTag.apply(to: cg)
                 cg.post(tap: .cghidEventTap)
             }
@@ -104,9 +129,45 @@ public struct EventSynth: Sendable {
         target: TargetApp
     ) async throws {
         try await prepare(action: action, target: target)
-        // key down + up
         poster.post(SynthesizedEvent(kind: .inertKey(keyCode: primitive.keyCode, keyDown: true), tagged: true))
         poster.post(SynthesizedEvent(kind: .inertKey(keyCode: primitive.keyCode, keyDown: false), tagged: true))
+    }
+
+    public func emitNavigationChord(
+        _ primitive: NavigationChordPrimitive,
+        action: ActionKind,
+        target: TargetApp
+    ) async throws {
+        try await prepare(action: action, target: target)
+        let c = primitive.chord
+        let kindDown = SynthesizedEvent.Kind.navigationChord(
+            keyCode: c.keyCode,
+            control: c.control,
+            shift: c.shift,
+            option: c.option,
+            command: c.command,
+            keyDown: true
+        )
+        let kindUp = SynthesizedEvent.Kind.navigationChord(
+            keyCode: c.keyCode,
+            control: c.control,
+            shift: c.shift,
+            option: c.option,
+            command: c.command,
+            keyDown: false
+        )
+        poster.post(SynthesizedEvent(kind: kindDown, tagged: true))
+        poster.post(SynthesizedEvent(kind: kindUp, tagged: true))
+    }
+
+    public func emitClick(
+        _ primitive: ClickPrimitive,
+        action: ActionKind,
+        target: TargetApp
+    ) async throws {
+        try await prepare(action: action, target: target)
+        poster.post(SynthesizedEvent(kind: .click(x: primitive.x, y: primitive.y, mouseDown: true), tagged: true))
+        poster.post(SynthesizedEvent(kind: .click(x: primitive.x, y: primitive.y, mouseDown: false), tagged: true))
     }
 
     private func prepare(action: ActionKind, target: TargetApp) async throws {

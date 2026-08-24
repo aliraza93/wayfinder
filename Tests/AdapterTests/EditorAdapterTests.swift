@@ -64,6 +64,13 @@ final class EditorAdapterTests: XCTestCase {
         XCTAssertNil(adapter.selectPrimitive(for: .openExistingFile(path: "/tmp/a.swift")))
         XCTAssertNil(adapter.selectPrimitive(for: .returnToPrevious))
         XCTAssertNil(adapter.rewrite(.switchWindow(direction: .next)))
+        XCTAssertEqual(adapter.rewrite(.switchTab(direction: .next)), .switchTab(direction: .next))
+        XCTAssertEqual(adapter.rewrite(.highlightNavigate(direction: .down)), .highlightNavigate(direction: .down))
+        XCTAssertEqual(adapter.rewrite(.contentClick), .contentClick)
+        XCTAssertEqual(
+            adapter.rewrite(.explorerFileSwitch(direction: .next)),
+            .explorerFileSwitch(direction: .next)
+        )
     }
 
     func testScrollAmountCapped() {

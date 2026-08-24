@@ -55,12 +55,14 @@ final class SafetyRoutingTests: XCTestCase {
         XCTAssertEqual(seen, actions)
 
         let events = await engine.runEvents()
-        // steps + focusRestore
-        XCTAssertEqual(events.count, actions.count + 1)
-        XCTAssertTrue(events.dropLast().allSatisfy { $0.result == .completed })
-        XCTAssertEqual(events.dropLast().map(\.actionKind), ["scroll", "pageNavigate", "wait"])
+        let stepEvents = events.filter { ["scroll", "pageNavigate", "wait"].contains($0.actionKind) }
+        XCTAssertEqual(stepEvents.map(\.actionKind), ["scroll", "pageNavigate", "wait"])
+        XCTAssertTrue(stepEvents.allSatisfy { $0.result == .completed })
+        XCTAssertTrue(events.contains { $0.actionKind == "runStarted" })
+        XCTAssertTrue(events.contains { $0.actionKind == "runCompleted" })
         XCTAssertEqual(events.last?.actionKind, "focusRestore")
-        XCTAssertTrue(events.allSatisfy { $0.targetBundleID == "com.example.app" })
+        XCTAssertTrue(events.filter { $0.actionKind != "pause" && $0.actionKind != "resume" }
+            .allSatisfy { $0.targetBundleID == "com.example.app" || $0.targetBundleID.isEmpty })
     }
 
     func testDeniedMutatingActionIsNotExecuted() async {
@@ -101,7 +103,7 @@ final class SafetyRoutingTests: XCTestCase {
         let log = await executor.log
         XCTAssertEqual(log.count, 0)
         let events = await engine.runEvents()
-        XCTAssertEqual(events.first?.result, .denied)
+        XCTAssertTrue(events.contains { $0.actionKind == "scroll" && $0.result == .denied })
         XCTAssertEqual(events.last?.actionKind, "focusRestore")
     }
 }

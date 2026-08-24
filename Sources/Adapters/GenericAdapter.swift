@@ -65,6 +65,16 @@ public struct GenericAdapter: Sendable {
             }
             guard InertKeyAllowlist.contains(key) else { return nil }
             return .inertKey(keyCode: key)
+        case .arrowNavigate(let direction, _, _):
+            let key: UInt16
+            switch direction {
+            case .left: key = 123
+            case .right: key = 124
+            case .down: key = 125
+            case .up: key = 126
+            }
+            guard InertKeyAllowlist.contains(key) else { return nil }
+            return .inertKey(keyCode: key)
         default:
             return nil
         }
@@ -77,6 +87,12 @@ public struct GenericAdapter: Sendable {
             return .scroll(direction: direction, amount: min(max(1, amount), Self.maxScrollAmount))
         case .pageNavigate(let move):
             return .pageNavigate(move)
+        case .arrowNavigate(let direction, let presses, let intervalSeconds):
+            return .arrowNavigate(
+                direction: direction,
+                presses: min(max(1, presses), NavigationLimits.maxArrowPresses),
+                intervalSeconds: intervalSeconds
+            )
         default:
             return nil
         }

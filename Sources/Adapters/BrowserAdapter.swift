@@ -69,7 +69,7 @@ public enum BrowserPrimitive: Equatable, Sendable {
 }
 
 /// Chrome navigation adapter: probe at run start, select scroll/page primitives, degrade on failure.
-/// Tab switching is intentionally unsupported (`unverified` if ever added later).
+/// Tab cycling uses allowlisted Ctrl+Tab chords via `rewrite` → RealExecutor.
 public struct BrowserAdapter: Sendable {
     public static let maxScrollAmount: Int = 100
     public static let pageAsScrollAmount: Int = 80
@@ -117,13 +117,24 @@ public struct BrowserAdapter: Sendable {
             return selectScroll(direction: direction, amount: amount)
         case .pageNavigate(let move):
             return selectPage(move)
+        case .arrowNavigate(let direction, _, _):
+            let key: UInt16
+            switch direction {
+            case .left: key = 123
+            case .right: key = 124
+            case .down: key = 125
+            case .up: key = 126
+            }
+            guard InertKeyAllowlist.contains(key) else { return nil }
+            return .inertKey(keyCode: key)
+        case .switchTab, .highlightNavigate, .contentClick, .explorerFileSwitch:
+            return nil
         case .wait, .activateApp, .switchWindow, .openExistingFile, .returnToPrevious:
             return nil
         }
     }
 
     /// Rewrites to an `ActionKind` the real executor can emit (capped / degraded).
-    /// Arrow-key scroll degrade is expressed only via `selectPrimitive` (no ActionKind for arrows).
     public func rewrite(_ action: ActionKind) -> ActionKind? {
         switch action {
         case .scroll(let direction, let amount):
@@ -134,13 +145,32 @@ public struct BrowserAdapter: Sendable {
             if capabilities.pageViaKeys {
                 return .pageNavigate(move)
             }
-            // Degrade: large scroll-wheel instead of page keys.
             switch move {
             case .pageUp, .home:
                 return .scroll(direction: .up, amount: Self.pageAsScrollAmount)
             case .pageDown, .end:
                 return .scroll(direction: .down, amount: Self.pageAsScrollAmount)
             }
+
+        case .arrowNavigate(let direction, let presses, let intervalSeconds):
+            return .arrowNavigate(
+                direction: direction,
+                presses: min(max(1, presses), NavigationLimits.maxArrowPresses),
+                intervalSeconds: intervalSeconds
+            )
+
+        case .switchTab(let direction):
+            return .switchTab(direction: direction)
+
+        case .highlightNavigate(let direction):
+            return .highlightNavigate(direction: direction)
+
+        case .contentClick:
+            return .contentClick
+
+        case .explorerFileSwitch:
+            // Explorer is an editor concern; browsers use tab switch instead.
+            return nil
 
         default:
             return nil

@@ -47,9 +47,14 @@ final class TransitionTests: XCTestCase {
         XCTAssertEqual(log[1].action, .pageNavigate(.pageDown))
 
         let events = await engine.runEvents()
-        XCTAssertEqual(events.map(\.result), [.completed, .completed, .completed])
-        XCTAssertEqual(events.map(\.actionKind), ["scroll", "pageNavigate", "focusRestore"])
-        XCTAssertTrue(events.allSatisfy { $0.targetBundleID == "com.example.app" })
+        let kinds = events.map(\.actionKind)
+        XCTAssertTrue(kinds.contains("scroll"))
+        XCTAssertTrue(kinds.contains("pageNavigate"))
+        XCTAssertTrue(kinds.contains("runStarted"))
+        XCTAssertTrue(kinds.contains("runCompleted"))
+        XCTAssertTrue(kinds.contains("focusRestore"))
+        XCTAssertTrue(events.filter { ["scroll", "pageNavigate", "focusRestore", "runStarted", "targetDetected", "runCompleted"].contains($0.actionKind) }
+            .allSatisfy { $0.targetBundleID == "com.example.app" })
     }
 
     func testErrorPathReachesStoppingThenIdle() async {
@@ -83,7 +88,8 @@ final class TransitionTests: XCTestCase {
         let state = await engine.state
         XCTAssertEqual(state, .idle)
         let events = await engine.runEvents()
-        XCTAssertEqual(events.first?.result, .failed)
+        XCTAssertTrue(events.contains { $0.actionKind == "scroll" && $0.result == .failed })
+        XCTAssertTrue(events.contains { $0.actionKind == "runFailed" })
         XCTAssertEqual(events.last?.actionKind, "focusRestore")
     }
 }

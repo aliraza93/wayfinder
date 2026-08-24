@@ -20,7 +20,8 @@ final class RedactionTests: XCTestCase {
         let data = Data(line.utf8)
         let object = try! JSONSerialization.jsonObject(with: data) as! [String: Any]
         let keys = Set(object.keys)
-        XCTAssertEqual(keys, Set(["timestamp", "actionKind", "targetBundleID", "result"]))
+        XCTAssertTrue(keys.isSubset(of: Set(["timestamp", "actionKind", "targetBundleID", "result", "identity"])))
+        XCTAssertTrue(keys.isSuperset(of: Set(["timestamp", "actionKind", "targetBundleID", "result"])))
     }
 
     func testJSONLRejectsEmbeddingDocumentContentAsActionKindShape() {

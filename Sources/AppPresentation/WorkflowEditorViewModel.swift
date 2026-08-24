@@ -11,14 +11,22 @@ public struct WorkflowDraft: Equatable, Sendable {
     public var loopEnabled: Bool
     public var maxIterations: Int
     public var maxDurationSeconds: Double?
+    public var untilStopped: Bool
+    public var shuffleSteps: Bool
+    public var reviewFilePaths: [String]
+    public var review: ReviewWorkspaceSettings
 
     public init(
-        name: String = "Untitled",
+        name: String = ReadAndReviewWorkspace.workflowName,
         targets: [TargetApp] = [],
         steps: [Step] = [],
         loopEnabled: Bool = false,
         maxIterations: Int = 1,
-        maxDurationSeconds: Double? = nil
+        maxDurationSeconds: Double? = nil,
+        untilStopped: Bool = false,
+        shuffleSteps: Bool = false,
+        reviewFilePaths: [String] = [],
+        review: ReviewWorkspaceSettings = .default
     ) {
         self.name = name
         self.targets = targets
@@ -26,6 +34,10 @@ public struct WorkflowDraft: Equatable, Sendable {
         self.loopEnabled = loopEnabled
         self.maxIterations = maxIterations
         self.maxDurationSeconds = maxDurationSeconds
+        self.untilStopped = untilStopped
+        self.shuffleSteps = shuffleSteps
+        self.reviewFilePaths = reviewFilePaths
+        self.review = review
     }
 
     public init(workflow: Workflow) {
@@ -35,18 +47,34 @@ public struct WorkflowDraft: Equatable, Sendable {
         self.loopEnabled = workflow.loop.enabled
         self.maxIterations = workflow.loop.maxIterations
         self.maxDurationSeconds = workflow.loop.maxDurationSeconds
+        self.untilStopped = workflow.loop.untilStopped
+        self.shuffleSteps = workflow.loop.shuffleSteps
+        self.reviewFilePaths = workflow.reviewFilePaths
+        self.review = workflow.review
     }
 
     public func asWorkflow() -> Workflow {
-        Workflow(
+        let looping = loopEnabled || untilStopped || maxDurationSeconds != nil
+        var reviewCopy = review
+        reviewCopy.normalize()
+        if reviewCopy.filePaths.isEmpty {
+            reviewCopy.filePaths = reviewFilePaths.filter {
+                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+        }
+        return Workflow(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             targets: targets,
             steps: steps,
             loop: LoopSettings(
-                enabled: loopEnabled,
+                enabled: looping,
                 maxIterations: max(1, maxIterations),
-                maxDurationSeconds: maxDurationSeconds
-            )
+                maxDurationSeconds: maxDurationSeconds,
+                untilStopped: untilStopped,
+                shuffleSteps: shuffleSteps
+            ),
+            reviewFilePaths: reviewCopy.filePaths,
+            review: reviewCopy
         )
     }
 }
@@ -102,10 +130,139 @@ public final class WorkflowEditorViewModel: @unchecked Sendable {
         draft.name = name
     }
 
-    public func setLoop(enabled: Bool, maxIterations: Int, maxDurationSeconds: Double?) {
-        draft.loopEnabled = enabled
+    public func setLoop(
+        enabled: Bool,
+        maxIterations: Int,
+        maxDurationSeconds: Double?,
+        untilStopped: Bool = false,
+        shuffleSteps: Bool? = nil
+    ) {
+        draft.loopEnabled = enabled || untilStopped || maxDurationSeconds != nil
         draft.maxIterations = max(1, maxIterations)
         draft.maxDurationSeconds = maxDurationSeconds
+        draft.untilStopped = untilStopped
+        if let shuffleSteps {
+            draft.shuffleSteps = shuffleSteps
+        }
+    }
+
+    public func setShuffleSteps(_ enabled: Bool) {
+        draft.shuffleSteps = enabled
+    }
+
+    public func setDurationPreset(_ preset: RunDurationPreset, customSeconds: Double?) {
+        switch preset {
+        case .untilStopped:
+            setLoop(
+                enabled: true,
+                maxIterations: NavigationLimits.absoluteMaxIterations,
+                maxDurationSeconds: nil,
+                untilStopped: true,
+                shuffleSteps: true
+            )
+            applyTimedReviewSteps()
+        case .iterationsOnly:
+            setLoop(
+                enabled: draft.maxIterations > 1,
+                maxIterations: draft.maxIterations,
+                maxDurationSeconds: nil,
+                untilStopped: false,
+                shuffleSteps: draft.shuffleSteps
+            )
+        case .custom:
+            let seconds = max(1, customSeconds ?? 60)
+            setLoop(
+                enabled: true,
+                maxIterations: NavigationLimits.absoluteMaxIterations,
+                maxDurationSeconds: seconds,
+                untilStopped: false,
+                shuffleSteps: true
+            )
+            applyTimedReviewSteps()
+        case .oneMinute, .fiveMinutes, .tenMinutes, .thirtyMinutes, .oneHour:
+            setLoop(
+                enabled: true,
+                maxIterations: NavigationLimits.absoluteMaxIterations,
+                maxDurationSeconds: preset.seconds,
+                untilStopped: false,
+                shuffleSteps: true
+            )
+            applyTimedReviewSteps()
+        }
+    }
+
+    /// Replaces steps with the built-in fast random review pool (duration-only UX).
+    public func applyTimedReviewSteps() {
+        draft.review.normalize()
+        draft.reviewFilePaths = draft.review.filePaths
+        draft.steps = TimedReviewNavigation.steps(
+            targets: draft.targets,
+            reviewFilePaths: draft.review.filePaths,
+            settings: draft.review
+        )
+        if draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || draft.name == "Untitled"
+        {
+            draft.name = ReadAndReviewWorkspace.workflowName
+        }
+    }
+
+    public func setReviewSettings(_ settings: ReviewWorkspaceSettings) {
+        var copy = settings
+        copy.normalize()
+        draft.review = copy
+        draft.reviewFilePaths = copy.filePaths
+        if draft.maxDurationSeconds != nil || draft.untilStopped {
+            applyTimedReviewSteps()
+        }
+    }
+
+    public func setReviewFilePaths(_ paths: [String]) {
+        draft.review.filePaths = paths
+        draft.reviewFilePaths = paths
+        if draft.maxDurationSeconds != nil || draft.untilStopped {
+            applyTimedReviewSteps()
+        }
+    }
+
+    public func addReviewFilePath(_ path: String) {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if !draft.review.filePaths.contains(trimmed) {
+            draft.review.filePaths.append(trimmed)
+        }
+        draft.reviewFilePaths = draft.review.filePaths
+        if draft.maxDurationSeconds != nil || draft.untilStopped {
+            applyTimedReviewSteps()
+        }
+    }
+
+    public func removeReviewFilePath(at index: Int) {
+        guard draft.review.filePaths.indices.contains(index) else { return }
+        draft.review.filePaths.remove(at: index)
+        draft.reviewFilePaths = draft.review.filePaths
+        if draft.maxDurationSeconds != nil || draft.untilStopped {
+            applyTimedReviewSteps()
+        }
+    }
+
+    public func addChromeTabLabel(_ label: String) {
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if !draft.review.chromeTabLabels.contains(trimmed) {
+            draft.review.chromeTabLabels.append(trimmed)
+        }
+        if draft.maxDurationSeconds != nil || draft.untilStopped {
+            applyTimedReviewSteps()
+        }
+    }
+
+    public func removeChromeTabLabel(at index: Int) {
+        guard draft.review.chromeTabLabels.indices.contains(index) else { return }
+        draft.review.chromeTabLabels.remove(at: index)
+        if draft.maxDurationSeconds != nil || draft.untilStopped {
+            applyTimedReviewSteps()
+        }
     }
 
     public func addTarget(bundleID: String, displayName: String, classification: TargetAppClass) {
@@ -163,6 +320,28 @@ public final class WorkflowEditorViewModel: @unchecked Sendable {
         draft.steps[index].action = .wait(seconds: max(0.1, seconds))
     }
 
+    public func setScrollAmount(at index: Int, amount: Int) {
+        guard draft.steps.indices.contains(index),
+              case .scroll(let direction, _) = draft.steps[index].action
+        else { return }
+        let capped = min(max(1, amount), NavigationLimits.maxScrollAmount)
+        draft.steps[index].action = .scroll(direction: direction, amount: capped)
+    }
+
+    public func setArrowNavigate(at index: Int, presses: Int, intervalSeconds: Double) {
+        guard draft.steps.indices.contains(index),
+              case .arrowNavigate(let direction, _, _) = draft.steps[index].action
+        else { return }
+        draft.steps[index].action = .arrowNavigate(
+            direction: direction,
+            presses: min(max(1, presses), NavigationLimits.maxArrowPresses),
+            intervalSeconds: min(
+                max(intervalSeconds, 0),
+                NavigationLimits.maxIntervalSeconds
+            )
+        )
+    }
+
     /// Validates with Config + Safety. Returns workflow if legal; does not save.
     public func validateDraft() -> Result<Workflow, WorkflowEditorError> {
         lastError = nil
@@ -180,6 +359,13 @@ public final class WorkflowEditorViewModel: @unchecked Sendable {
         var working = draft
         working.name = trimmed
         let workflow = working.asWorkflow()
+
+        let dwellCheck = workflow.review.validated()
+        if !dwellCheck.ok {
+            let message = dwellCheck.message ?? "invalid dwell range"
+            lastError = message
+            return .failure(.validation(message))
+        }
 
         do {
             try validator.validate(workflow)
@@ -251,5 +437,27 @@ public final class WorkflowEditorViewModel: @unchecked Sendable {
             lastError = String(describing: error)
             return false
         }
+    }
+
+    public func savedWorkflowNames() -> [String] {
+        do {
+            return try store.load().workflows.map(\.name)
+        } catch {
+            return []
+        }
+    }
+
+    public func resetDraft() {
+        draft = WorkflowDraft(
+            name: ReadAndReviewWorkspace.workflowName,
+            maxDurationSeconds: 60,
+            untilStopped: false,
+            shuffleSteps: true,
+            review: .default
+        )
+        draft.loopEnabled = true
+        draft.maxIterations = NavigationLimits.absoluteMaxIterations
+        applyTimedReviewSteps()
+        lastError = nil
     }
 }

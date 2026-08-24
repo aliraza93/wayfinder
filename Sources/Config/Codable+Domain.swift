@@ -99,6 +99,28 @@ enum StrictJSON {
         }
         return try container.decode(Double.self, forKey: codingKey)
     }
+
+    static func decodeIfPresentBool(
+        _ container: KeyedDecodingContainer<StrictCodingKey>,
+        _ key: String
+    ) throws -> Bool? {
+        let codingKey = StrictCodingKey(stringValue: key)
+        guard container.contains(codingKey), try !container.decodeNil(forKey: codingKey) else {
+            return nil
+        }
+        return try container.decode(Bool.self, forKey: codingKey)
+    }
+
+    static func decodeIfPresentInt(
+        _ container: KeyedDecodingContainer<StrictCodingKey>,
+        _ key: String
+    ) throws -> Int? {
+        let codingKey = StrictCodingKey(stringValue: key)
+        guard container.contains(codingKey), try !container.decodeNil(forKey: codingKey) else {
+            return nil
+        }
+        return try container.decode(Int.self, forKey: codingKey)
+    }
 }
 
 // MARK: - WorkflowConfigDocument
@@ -129,7 +151,7 @@ extension Workflow: Codable {
         let container = try decoder.container(keyedBy: StrictCodingKey.self)
         try StrictJSON.requireKeys(
             container,
-            allowed: ["name", "targets", "steps", "loop"],
+            allowed: ["name", "targets", "steps", "loop", "reviewFilePaths", "review"],
             path: "workflow"
         )
         let name = try StrictJSON.decodeString(container, "name", path: "workflow")
@@ -142,7 +164,26 @@ extension Workflow: Codable {
             LoopSettings.self,
             forKey: StrictCodingKey(stringValue: "loop")
         )
-        self.init(name: name, targets: targets, steps: steps, loop: loop)
+        let reviewFilePaths = try container.decodeIfPresent(
+            [String].self,
+            forKey: StrictCodingKey(stringValue: "reviewFilePaths")
+        ) ?? []
+        var review = try container.decodeIfPresent(
+            ReviewWorkspaceSettings.self,
+            forKey: StrictCodingKey(stringValue: "review")
+        ) ?? .default
+        if review.filePaths.isEmpty, !reviewFilePaths.isEmpty {
+            review.filePaths = reviewFilePaths
+        }
+        review.normalize()
+        self.init(
+            name: name,
+            targets: targets,
+            steps: steps,
+            loop: loop,
+            reviewFilePaths: reviewFilePaths,
+            review: review
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -151,6 +192,11 @@ extension Workflow: Codable {
         try container.encode(targets, forKey: StrictCodingKey(stringValue: "targets"))
         try container.encode(steps, forKey: StrictCodingKey(stringValue: "steps"))
         try container.encode(loop, forKey: StrictCodingKey(stringValue: "loop"))
+        let paths = review.filePaths.isEmpty ? reviewFilePaths : review.filePaths
+        if !paths.isEmpty {
+            try container.encode(paths, forKey: StrictCodingKey(stringValue: "reviewFilePaths"))
+        }
+        try container.encode(review, forKey: StrictCodingKey(stringValue: "review"))
     }
 }
 
@@ -161,7 +207,7 @@ extension LoopSettings: Codable {
         let container = try decoder.container(keyedBy: StrictCodingKey.self)
         try StrictJSON.requireKeys(
             container,
-            allowed: ["enabled", "maxIterations", "maxDurationSeconds"],
+            allowed: ["enabled", "maxIterations", "maxDurationSeconds", "untilStopped", "shuffleSteps"],
             path: "loop"
         )
         let enabled = try StrictJSON.decodeBool(container, "enabled", path: "loop")
@@ -170,10 +216,14 @@ extension LoopSettings: Codable {
             container,
             "maxDurationSeconds"
         )
+        let untilStopped = try StrictJSON.decodeIfPresentBool(container, "untilStopped") ?? false
+        let shuffleSteps = try StrictJSON.decodeIfPresentBool(container, "shuffleSteps") ?? false
         self.init(
             enabled: enabled,
             maxIterations: maxIterations,
-            maxDurationSeconds: maxDurationSeconds
+            maxDurationSeconds: maxDurationSeconds,
+            untilStopped: untilStopped,
+            shuffleSteps: shuffleSteps
         )
     }
 
@@ -185,6 +235,12 @@ extension LoopSettings: Codable {
             maxDurationSeconds,
             forKey: StrictCodingKey(stringValue: "maxDurationSeconds")
         )
+        if untilStopped {
+            try container.encode(untilStopped, forKey: StrictCodingKey(stringValue: "untilStopped"))
+        }
+        if shuffleSteps {
+            try container.encode(shuffleSteps, forKey: StrictCodingKey(stringValue: "shuffleSteps"))
+        }
     }
 }
 
@@ -365,6 +421,52 @@ extension ActionKind: Codable {
             )
             self = .pageNavigate(move)
 
+        case "arrowNavigate":
+            try StrictJSON.requireKeys(
+                container,
+                allowed: ["type", "direction", "presses", "intervalSeconds"],
+                path: "action"
+            )
+            let direction = try container.decode(
+                ArrowDirection.self,
+                forKey: StrictCodingKey(stringValue: "direction")
+            )
+            let presses = try StrictJSON.decodeIfPresentInt(container, "presses") ?? 1
+            let intervalSeconds = try StrictJSON.decodeIfPresentDouble(container, "intervalSeconds") ?? 0
+            self = .arrowNavigate(
+                direction: direction,
+                presses: presses,
+                intervalSeconds: intervalSeconds
+            )
+
+        case "switchTab":
+            try StrictJSON.requireKeys(container, allowed: ["type", "direction"], path: "action")
+            let direction = try container.decode(
+                WindowDirection.self,
+                forKey: StrictCodingKey(stringValue: "direction")
+            )
+            self = .switchTab(direction: direction)
+
+        case "highlightNavigate":
+            try StrictJSON.requireKeys(container, allowed: ["type", "direction"], path: "action")
+            let direction = try container.decode(
+                ArrowDirection.self,
+                forKey: StrictCodingKey(stringValue: "direction")
+            )
+            self = .highlightNavigate(direction: direction)
+
+        case "contentClick":
+            try StrictJSON.requireKeys(container, allowed: ["type"], path: "action")
+            self = .contentClick
+
+        case "explorerFileSwitch":
+            try StrictJSON.requireKeys(container, allowed: ["type", "direction"], path: "action")
+            let direction = try container.decode(
+                WindowDirection.self,
+                forKey: StrictCodingKey(stringValue: "direction")
+            )
+            self = .explorerFileSwitch(direction: direction)
+
         case "openExistingFile":
             try StrictJSON.requireKeys(container, allowed: ["type", "path"], path: "action")
             let path = try StrictJSON.decodeString(container, "path", path: "action")
@@ -395,6 +497,10 @@ extension ActionKind: Codable {
             try container.encode("switchWindow", forKey: StrictCodingKey(stringValue: "type"))
             try container.encode(direction, forKey: StrictCodingKey(stringValue: "direction"))
 
+        case .switchTab(let direction):
+            try container.encode("switchTab", forKey: StrictCodingKey(stringValue: "type"))
+            try container.encode(direction, forKey: StrictCodingKey(stringValue: "direction"))
+
         case .scroll(let direction, let amount):
             try container.encode("scroll", forKey: StrictCodingKey(stringValue: "type"))
             try container.encode(direction, forKey: StrictCodingKey(stringValue: "direction"))
@@ -403,6 +509,23 @@ extension ActionKind: Codable {
         case .pageNavigate(let move):
             try container.encode("pageNavigate", forKey: StrictCodingKey(stringValue: "type"))
             try container.encode(move, forKey: StrictCodingKey(stringValue: "move"))
+
+        case .arrowNavigate(let direction, let presses, let intervalSeconds):
+            try container.encode("arrowNavigate", forKey: StrictCodingKey(stringValue: "type"))
+            try container.encode(direction, forKey: StrictCodingKey(stringValue: "direction"))
+            try container.encode(presses, forKey: StrictCodingKey(stringValue: "presses"))
+            try container.encode(intervalSeconds, forKey: StrictCodingKey(stringValue: "intervalSeconds"))
+
+        case .highlightNavigate(let direction):
+            try container.encode("highlightNavigate", forKey: StrictCodingKey(stringValue: "type"))
+            try container.encode(direction, forKey: StrictCodingKey(stringValue: "direction"))
+
+        case .contentClick:
+            try container.encode("contentClick", forKey: StrictCodingKey(stringValue: "type"))
+
+        case .explorerFileSwitch(let direction):
+            try container.encode("explorerFileSwitch", forKey: StrictCodingKey(stringValue: "type"))
+            try container.encode(direction, forKey: StrictCodingKey(stringValue: "direction"))
 
         case .openExistingFile(let path):
             try container.encode("openExistingFile", forKey: StrictCodingKey(stringValue: "type"))
@@ -466,6 +589,31 @@ extension ScrollDirection: Codable {
     }
 }
 
+extension ArrowDirection: Codable {
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        switch raw {
+        case "up": self = .up
+        case "down": self = .down
+        case "left": self = .left
+        case "right": self = .right
+        default:
+            throw ConfigError.invalidValue(path: "direction", detail: "unknown value \(raw)")
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .up: try container.encode("up")
+        case .down: try container.encode("down")
+        case .left: try container.encode("left")
+        case .right: try container.encode("right")
+        }
+    }
+}
+
 extension PageMove: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -490,3 +638,49 @@ extension PageMove: Codable {
         }
     }
 }
+
+// MARK: - ReviewWorkspaceSettings
+
+extension ReviewWorkspaceSettings: Codable {
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: StrictCodingKey.self)
+        try StrictJSON.requireKeys(
+            container,
+            allowed: [
+                "workspacePath", "filePaths", "chromeTabLabels",
+                "dwellMinSeconds", "dwellMaxSeconds",
+                "speed", "customIntervalSeconds", "targetOrder", "loopTargets",
+            ],
+            path: "review"
+        )
+        var settings = ReviewWorkspaceSettings(
+            workspacePath: (try? container.decode(String.self, forKey: StrictCodingKey(stringValue: "workspacePath"))) ?? "",
+            filePaths: try container.decodeIfPresent([String].self, forKey: StrictCodingKey(stringValue: "filePaths")) ?? [],
+            chromeTabLabels: try container.decodeIfPresent([String].self, forKey: StrictCodingKey(stringValue: "chromeTabLabels")) ?? [],
+            dwellMinSeconds: try StrictJSON.decodeIfPresentDouble(container, "dwellMinSeconds") ?? 30,
+            dwellMaxSeconds: try StrictJSON.decodeIfPresentDouble(container, "dwellMaxSeconds") ?? 180,
+            speed: (try? container.decode(NavigationSpeedPreset.self, forKey: StrictCodingKey(stringValue: "speed"))) ?? .normal,
+            customIntervalSeconds: try StrictJSON.decodeIfPresentDouble(container, "customIntervalSeconds") ?? 0.35,
+            targetOrder: (try? container.decode(ReviewTargetOrder.self, forKey: StrictCodingKey(stringValue: "targetOrder"))) ?? .sequential,
+            loopTargets: try StrictJSON.decodeIfPresentBool(container, "loopTargets") ?? true
+        )
+        settings.normalize()
+        self = settings
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: StrictCodingKey.self)
+        try container.encode(workspacePath, forKey: StrictCodingKey(stringValue: "workspacePath"))
+        try container.encode(filePaths, forKey: StrictCodingKey(stringValue: "filePaths"))
+        try container.encode(chromeTabLabels, forKey: StrictCodingKey(stringValue: "chromeTabLabels"))
+        try container.encode(dwellMinSeconds, forKey: StrictCodingKey(stringValue: "dwellMinSeconds"))
+        try container.encode(dwellMaxSeconds, forKey: StrictCodingKey(stringValue: "dwellMaxSeconds"))
+        try container.encode(speed, forKey: StrictCodingKey(stringValue: "speed"))
+        try container.encode(customIntervalSeconds, forKey: StrictCodingKey(stringValue: "customIntervalSeconds"))
+        try container.encode(targetOrder, forKey: StrictCodingKey(stringValue: "targetOrder"))
+        try container.encode(loopTargets, forKey: StrictCodingKey(stringValue: "loopTargets"))
+    }
+}
+
+extension NavigationSpeedPreset: Codable {}
+extension ReviewTargetOrder: Codable {}

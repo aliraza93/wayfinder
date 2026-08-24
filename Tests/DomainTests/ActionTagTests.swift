@@ -7,8 +7,13 @@ final class ActionTagTests: XCTestCase {
         [
             .activateApp(bundleID: "com.example.app"),
             .switchWindow(direction: .next),
+            .switchTab(direction: .next),
             .scroll(direction: .down, amount: 3),
             .pageNavigate(.pageDown),
+            .arrowNavigate(direction: .down, presses: 1, intervalSeconds: 0.5),
+            .highlightNavigate(direction: .down),
+            .contentClick,
+            .explorerFileSwitch(direction: .next),
             .openExistingFile(path: "/tmp/doc.txt"),
             .wait(seconds: 1.0),
             .returnToPrevious,
@@ -25,7 +30,6 @@ final class ActionTagTests: XCTestCase {
     }
 
     func testTagLookupCoversEveryAction() {
-        // Calling capabilityTags exercises the exhaustive switch; missing cases won't compile.
         for action in allActions {
             let tags = action.capabilityTags
             XCTAssertFalse(tags.mutatesText)
@@ -33,7 +37,7 @@ final class ActionTagTests: XCTestCase {
             _ = tags.verifiable
             _ = tags.primitive
         }
-        XCTAssertEqual(allActions.count, 7, "v1 ActionKind has exactly seven cases")
+        XCTAssertEqual(allActions.count, 12, "ActionKind cases including explorerFileSwitch")
     }
 
     func testPrimitivesMatchIntent() {
@@ -46,12 +50,33 @@ final class ActionTagTests: XCTestCase {
             .appControl
         )
         XCTAssertEqual(
+            ActionKind.switchTab(direction: .next).capabilityTags.primitive,
+            .navigationChord
+        )
+        XCTAssertEqual(
             ActionKind.scroll(direction: .up, amount: 1).capabilityTags.primitive,
             .scrollWheel
         )
         XCTAssertEqual(
             ActionKind.pageNavigate(.home).capabilityTags.primitive,
             .inertKey
+        )
+        XCTAssertEqual(
+            ActionKind.arrowNavigate(direction: .up, presses: 1, intervalSeconds: 0)
+                .capabilityTags.primitive,
+            .inertKey
+        )
+        XCTAssertEqual(
+            ActionKind.highlightNavigate(direction: .up).capabilityTags.primitive,
+            .navigationChord
+        )
+        XCTAssertEqual(
+            ActionKind.contentClick.capabilityTags.primitive,
+            .targetedClick
+        )
+        XCTAssertEqual(
+            ActionKind.explorerFileSwitch(direction: .next).capabilityTags.primitive,
+            .navigationChord
         )
         XCTAssertEqual(
             ActionKind.openExistingFile(path: "/a").capabilityTags.primitive,
@@ -71,14 +96,14 @@ final class ActionTagTests: XCTestCase {
         XCTAssertFalse(ActionKind.activateApp(bundleID: "x").capabilityTags.requiresFocusGuard)
         XCTAssertTrue(ActionKind.activateApp(bundleID: "x").capabilityTags.verifiable)
 
-        XCTAssertTrue(ActionKind.switchWindow(direction: .next).capabilityTags.requiresFocusGuard)
-        XCTAssertTrue(ActionKind.switchWindow(direction: .next).capabilityTags.verifiable)
+        XCTAssertTrue(ActionKind.switchTab(direction: .next).capabilityTags.requiresFocusGuard)
+        XCTAssertFalse(ActionKind.switchTab(direction: .next).capabilityTags.verifiable)
+
+        XCTAssertTrue(ActionKind.highlightNavigate(direction: .down).capabilityTags.requiresFocusGuard)
+        XCTAssertTrue(ActionKind.contentClick.capabilityTags.requiresFocusGuard)
 
         XCTAssertTrue(ActionKind.scroll(direction: .down, amount: 1).capabilityTags.requiresFocusGuard)
         XCTAssertFalse(ActionKind.scroll(direction: .down, amount: 1).capabilityTags.verifiable)
-
-        XCTAssertTrue(ActionKind.pageNavigate(.pageUp).capabilityTags.requiresFocusGuard)
-        XCTAssertFalse(ActionKind.pageNavigate(.pageUp).capabilityTags.verifiable)
 
         XCTAssertFalse(ActionKind.openExistingFile(path: "/a").capabilityTags.requiresFocusGuard)
         XCTAssertTrue(ActionKind.openExistingFile(path: "/a").capabilityTags.verifiable)

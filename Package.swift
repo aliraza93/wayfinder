@@ -71,6 +71,7 @@ let package = Package(
                 "InputSynthesis",
                 "Safety",
                 "WaypointAccessibility",
+                "AppControl",
             ],
             path: "Sources/Actions"
         ),

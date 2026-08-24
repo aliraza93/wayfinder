@@ -57,8 +57,8 @@ public enum EditorPrimitive: Equatable, Sendable {
     case inertKey(keyCode: UInt16)
 }
 
-/// Read-only editor adapter (VS Code / editor-class): scroll + arrows/Page/Home/End only.
-/// No character keys, Return, Delete, paste, save, or Cmd/Ctrl chords — ever.
+/// Read-only editor adapter (VS Code / Cursor): scroll, arrows/Page, tab cycle, highlight, content click.
+/// No character keys, Return, Delete, paste, or save.
 public struct EditorAdapter: Sendable {
     public static let maxScrollAmount: Int = 100
 
@@ -110,6 +110,10 @@ public struct EditorAdapter: Sendable {
             return selectScroll(direction: direction, amount: amount)
         case .pageNavigate(let move):
             return selectPage(move)
+        case .arrowNavigate(let direction, _, _):
+            return selectArrowNavigate(direction)
+        case .switchTab, .highlightNavigate, .contentClick, .explorerFileSwitch:
+            return nil
         case .wait, .activateApp, .switchWindow, .openExistingFile, .returnToPrevious:
             return nil
         }
@@ -124,7 +128,18 @@ public struct EditorAdapter: Sendable {
         return .inertKey(keyCode: key)
     }
 
-    /// Rewrites to executor-facing `ActionKind` (capped scroll / page only).
+    private func selectArrowNavigate(_ direction: ArrowDirection) -> EditorPrimitive? {
+        let scrollDir: ScrollDirection
+        switch direction {
+        case .up: scrollDir = .up
+        case .down: scrollDir = .down
+        case .left: scrollDir = .left
+        case .right: scrollDir = .right
+        }
+        return selectArrow(direction: scrollDir)
+    }
+
+    /// Rewrites to executor-facing `ActionKind` (capped scroll / page / arrow only).
     public func rewrite(_ action: ActionKind) -> ActionKind? {
         switch action {
         case .scroll(let direction, let amount):
@@ -132,6 +147,20 @@ public struct EditorAdapter: Sendable {
             return .scroll(direction: direction, amount: cappedScrollAmount(amount))
         case .pageNavigate(let move):
             return .pageNavigate(move)
+        case .arrowNavigate(let direction, let presses, let intervalSeconds):
+            return .arrowNavigate(
+                direction: direction,
+                presses: min(max(1, presses), NavigationLimits.maxArrowPresses),
+                intervalSeconds: intervalSeconds
+            )
+        case .switchTab(let direction):
+            return .switchTab(direction: direction)
+        case .highlightNavigate(let direction):
+            return .highlightNavigate(direction: direction)
+        case .contentClick:
+            return .contentClick
+        case .explorerFileSwitch(let direction):
+            return .explorerFileSwitch(direction: direction)
         default:
             return nil
         }

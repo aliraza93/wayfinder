@@ -17,6 +17,38 @@ final class RoundTripTests: XCTestCase {
         XCTAssertEqual(decoded, action)
     }
 
+    func testArrowNavigatePinnedJSONShape() throws {
+        let action = ActionKind.arrowNavigate(direction: .down, presses: 2, intervalSeconds: 1.5)
+        let data = try JSONEncoder().encode(action)
+        let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        XCTAssertEqual(object["type"] as? String, "arrowNavigate")
+        XCTAssertEqual(object["direction"] as? String, "down")
+        XCTAssertEqual(object["presses"] as? Int, 2)
+        let decoded = try JSONDecoder().decode(ActionKind.self, from: data)
+        XCTAssertEqual(decoded, action)
+    }
+
+    func testSwitchTabHighlightAndClickRoundTrip() throws {
+        let actions: [ActionKind] = [
+            .switchTab(direction: .previous),
+            .highlightNavigate(direction: .up),
+            .contentClick,
+        ]
+        for action in actions {
+            let data = try JSONEncoder().encode(action)
+            let decoded = try JSONDecoder().decode(ActionKind.self, from: data)
+            XCTAssertEqual(decoded, action)
+        }
+    }
+
+    func testReviewFilePathsRoundTrip() throws {
+        var doc = sampleDocument()
+        doc.workflows[0].reviewFilePaths = ["Sources/App/Foo.swift", "~/proj/Bar.swift"]
+        let data = try JSONEncoder().encode(doc)
+        let decoded = try JSONDecoder().decode(WorkflowConfigDocument.self, from: data)
+        XCTAssertEqual(decoded.workflows[0].reviewFilePaths, doc.workflows[0].reviewFilePaths)
+    }
+
     func testDocumentRoundTripEquality() throws {
         let document = sampleDocument()
         let encoder = JSONEncoder()

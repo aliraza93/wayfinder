@@ -41,11 +41,18 @@ public struct WorkflowRunSummary: Equatable, Sendable {
     public var workflowName: String
     public var events: [RunEvent]
     public var adapters: [String: ResolvedAdapter]
+    public var endReason: RunEndReason?
 
-    public init(workflowName: String, events: [RunEvent], adapters: [String: ResolvedAdapter]) {
+    public init(
+        workflowName: String,
+        events: [RunEvent],
+        adapters: [String: ResolvedAdapter],
+        endReason: RunEndReason? = nil
+    ) {
         self.workflowName = workflowName
         self.events = events
         self.adapters = adapters
+        self.endReason = endReason
     }
 }
 
@@ -136,33 +143,40 @@ public actor WorkflowRunner {
         // Engine executes against the primary (first) target; rewrite steps for that adapter.
         let primary = workflow.targets[0]
         let kind = adapters[primary.bundleID] ?? .generic
-        let rewrittenSteps = workflow.steps.map { step -> Step in
-            let action = AdapterActionMapper.rewrite(step.action, target: primary, adapter: kind)
-            return Step(
-                action: action,
-                timeoutSeconds: step.timeoutSeconds,
-                retryPolicy: step.retryPolicy,
-                onError: step.onError
-            )
-        }
+        let rewrittenSteps = NavigationStepExpander.expand(
+            workflow.steps.map { step -> Step in
+                let action = AdapterActionMapper.rewrite(step.action, target: primary, adapter: kind)
+                return Step(
+                    action: action,
+                    timeoutSeconds: step.timeoutSeconds,
+                    retryPolicy: step.retryPolicy,
+                    onError: step.onError
+                )
+            }
+        )
 
         let prepared = Workflow(
             name: workflow.name,
             targets: workflow.targets,
             steps: rewrittenSteps,
-            loop: workflow.loop
+            loop: workflow.loop,
+            reviewFilePaths: workflow.reviewFilePaths,
+            review: workflow.review
         )
         return PreparedWorkflow(workflow: prepared, adapterByBundleID: adapters)
     }
 
     /// Full path: prepare then run on the engine. Invalid workflows never reach the executor.
+    /// When `engineHandler` is provided, it receives the live engine before `run` (for pause/UI).
     public func run(
         workflowName: String,
         executor: ActionExecutor,
         sovereignty: UserSovereigntySignal,
         timing: TimingPolicy,
         recorder: RunRecorder = RunRecorder(),
-        resolver: any WorkflowTargetResolver = PermissiveTargetResolver()
+        resolver: any WorkflowTargetResolver = PermissiveTargetResolver(),
+        preconditionProbe: any RunPreconditionProbe = AlwaysReadyProbe(),
+        engineHandler: ((WorkflowEngine) async -> Void)? = nil
     ) async throws -> WorkflowRunSummary {
         let prepared = try prepare(workflowName: workflowName, resolver: resolver)
         let engine = WorkflowEngine(
@@ -170,13 +184,19 @@ public actor WorkflowRunner {
             executor: executor,
             sovereignty: sovereignty,
             timing: timing,
-            recorder: recorder
+            recorder: recorder,
+            preconditionProbe: preconditionProbe
         )
+        if let engineHandler {
+            await engineHandler(engine)
+        }
         await engine.run(prepared.workflow)
+        let reason = await engine.endReason
         return WorkflowRunSummary(
             workflowName: prepared.workflow.name,
             events: recorder.snapshot(),
-            adapters: prepared.adapterByBundleID
+            adapters: prepared.adapterByBundleID,
+            endReason: reason
         )
     }
 
@@ -186,7 +206,9 @@ public actor WorkflowRunner {
         sovereignty: UserSovereigntySignal,
         timing: TimingPolicy,
         recorder: RunRecorder = RunRecorder(),
-        resolver: any WorkflowTargetResolver = PermissiveTargetResolver()
+        resolver: any WorkflowTargetResolver = PermissiveTargetResolver(),
+        preconditionProbe: any RunPreconditionProbe = AlwaysReadyProbe(),
+        engineHandler: ((WorkflowEngine) async -> Void)? = nil
     ) async throws -> WorkflowRunSummary {
         let prepared = try prepare(workflow: workflow, resolver: resolver)
         let engine = WorkflowEngine(
@@ -194,13 +216,19 @@ public actor WorkflowRunner {
             executor: executor,
             sovereignty: sovereignty,
             timing: timing,
-            recorder: recorder
+            recorder: recorder,
+            preconditionProbe: preconditionProbe
         )
+        if let engineHandler {
+            await engineHandler(engine)
+        }
         await engine.run(prepared.workflow)
+        let reason = await engine.endReason
         return WorkflowRunSummary(
             workflowName: prepared.workflow.name,
             events: recorder.snapshot(),
-            adapters: prepared.adapterByBundleID
+            adapters: prepared.adapterByBundleID,
+            endReason: reason
         )
     }
 

@@ -7,8 +7,13 @@ public enum ActionKindLabel {
         switch action {
         case .activateApp: return "activateApp"
         case .switchWindow: return "switchWindow"
+        case .switchTab: return "switchTab"
         case .scroll: return "scroll"
         case .pageNavigate: return "pageNavigate"
+        case .arrowNavigate: return "arrowNavigate"
+        case .highlightNavigate: return "highlightNavigate"
+        case .contentClick: return "contentClick"
+        case .explorerFileSwitch: return "explorerFileSwitch"
         case .openExistingFile: return "openExistingFile"
         case .wait: return "wait"
         case .returnToPrevious: return "returnToPrevious"

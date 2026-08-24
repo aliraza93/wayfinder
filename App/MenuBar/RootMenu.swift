@@ -67,7 +67,7 @@ struct RootMenu: View {
                 .font(.caption2)
         }
 
-        Button(session.isRunning ? "Stop" : "Start") {
+        Button(session.isRunning ? "Stop (⌃⌥.)" : "Start") {
             if session.isRunning {
                 session.stop()
             } else {
@@ -77,6 +77,21 @@ struct RootMenu: View {
         // Allow Start click even when Denied so we can show why it won’t run.
         .disabled(session.isRunning ? false : session.selectedWorkflow == nil)
         .accessibilityIdentifier("menu.startStop")
+
+        if session.isRunning {
+            if session.isPaused {
+                Button("Resume (⌃⌥R)") { session.resume() }
+                    .accessibilityIdentifier("menu.resume")
+            } else {
+                Button("Pause (⌃⌥P)") { session.pause() }
+                    .accessibilityIdentifier("menu.pause")
+            }
+        }
+
+        ForEach(session.progressLines, id: \.self) { line in
+            Text(line)
+                .font(.caption2)
+        }
 
         Divider()
         Button("Workflow Editor…") {
@@ -100,7 +115,7 @@ struct RootMenu: View {
         }
 
         Divider()
-        Text("Stop hot-key: Ctrl+Opt+.")
+        Text("Hot-keys: Stop Ctrl+Opt+. · Pause Ctrl+Opt+P · Resume Ctrl+Opt+R")
             .font(.caption2)
         Button("Quit Waypoint") {
             NSApplication.shared.terminate(nil)

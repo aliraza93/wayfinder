@@ -9,8 +9,13 @@ final class PolicyMatrixTests: XCTestCase {
         [
             .activateApp(bundleID: "com.example.app"),
             .switchWindow(direction: .next),
+            .switchTab(direction: .next),
             .scroll(direction: .down, amount: 1),
             .pageNavigate(.pageDown),
+            .arrowNavigate(direction: .down, presses: 1, intervalSeconds: 0.5),
+            .highlightNavigate(direction: .down),
+            .contentClick,
+            .explorerFileSwitch(direction: .next),
             .openExistingFile(path: "/tmp/doc.txt"),
             .wait(seconds: 1),
             .returnToPrevious,

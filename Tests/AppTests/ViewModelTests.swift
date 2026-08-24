@@ -129,7 +129,7 @@ final class ViewModelTests: XCTestCase {
                 retryPolicy: RetryPolicy(maxRetries: 0),
                 onError: .abort
             ),
-        ])
+        ], durationSeconds: 60)
         XCTAssertFalse(vm.canStart)
         XCTAssertTrue(vm.live.isRunning)
         XCTAssertTrue(vm.live.summaryLine.contains("Running"))
@@ -143,9 +143,9 @@ final class ViewModelTests: XCTestCase {
     }
 
     func testHumanStepTitlesMatchPalette() {
-        XCTAssertEqual(
-            ActionPaletteItem.humanTitle(for: .scroll(direction: .down, amount: 1)),
-            ActionPaletteItem.scrollDown.title
+        XCTAssertTrue(
+            ActionPaletteItem.humanTitle(for: .scroll(direction: .down, amount: 1))
+                .hasPrefix(ActionPaletteItem.scrollDown.title)
         )
         XCTAssertEqual(
             ActionPaletteItem.humanTitle(for: .pageNavigate(.pageDown)),
@@ -155,6 +155,32 @@ final class ViewModelTests: XCTestCase {
             ActionPaletteItem.humanTitle(for: .pageNavigate(.pageDown)),
             "page pageDown"
         )
+    }
+
+    func testDurationPresetUntilStopped() {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WaypointEditorDur-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let store = ConfigStore(baseDirectory: temp)
+        let vm = WorkflowEditorViewModel(store: store)
+        vm.setDurationPreset(.thirtyMinutes, customSeconds: nil)
+        XCTAssertEqual(vm.draft.maxDurationSeconds, 1_800)
+        XCTAssertFalse(vm.draft.untilStopped)
+        vm.setDurationPreset(.untilStopped, customSeconds: nil)
+        XCTAssertTrue(vm.draft.untilStopped)
+        XCTAssertNil(vm.draft.maxDurationSeconds)
+    }
+
+    func testProgressCountsScrollAndKeyboard() {
+        let events = [
+            RunEvent(timestamp: Date(), actionKind: "scroll", targetBundleID: "x", result: .completed),
+            RunEvent(timestamp: Date(), actionKind: "arrowNavigate", targetBundleID: "x", result: .completed),
+            RunEvent(timestamp: Date(), actionKind: "pageNavigate", targetBundleID: "x", result: .completed),
+            RunEvent(timestamp: Date(), actionKind: "runStarted", targetBundleID: "x", result: .completed),
+        ]
+        let counts = RunLiveStatus.counts(from: events)
+        XCTAssertEqual(counts.scroll, 1)
+        XCTAssertEqual(counts.keyboard, 2)
     }
 
     func testInvalidSaveDoesNotPersistAndDoesNotDismiss() throws {

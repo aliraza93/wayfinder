@@ -44,12 +44,17 @@ final class RunnerTests: XCTestCase {
 
         let events = summary.events
         XCTAssertFalse(events.isEmpty)
+        let allowed = Set([
+            "scroll", "wait", "pageNavigate", "arrowNavigate", "focusRestore",
+            "runStarted", "targetDetected", "runCompleted", "runStopped", "runFailed",
+            "pause", "resume",
+        ])
         XCTAssertTrue(events.allSatisfy { event in
-            event.targetBundleID == "com.google.Chrome"
-                && ["scroll", "wait", "pageNavigate", "focusRestore"].contains(event.actionKind)
+            (event.targetBundleID == "com.google.Chrome" || event.targetBundleID.isEmpty)
+                && allowed.contains(event.actionKind)
         })
         // Content-free: only known fields populated (no free-form document text).
-        XCTAssertTrue(events.allSatisfy { !$0.actionKind.isEmpty && !$0.targetBundleID.isEmpty })
+        XCTAssertTrue(events.allSatisfy { !$0.actionKind.isEmpty })
     }
 
     func testValidationRejectsIllegalWorkflowBeforeAnyAction() async throws {

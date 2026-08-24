@@ -36,6 +36,13 @@ public extension ActionKind {
                 verifiable: true,
                 primitive: .appControl
             )
+        case .switchTab:
+            return CapabilityTags(
+                mutatesText: false,
+                requiresFocusGuard: true,
+                verifiable: false,
+                primitive: .navigationChord
+            )
         case .scroll:
             return CapabilityTags(
                 mutatesText: false,
@@ -49,6 +56,34 @@ public extension ActionKind {
                 requiresFocusGuard: true,
                 verifiable: false,
                 primitive: .inertKey
+            )
+        case .arrowNavigate:
+            return CapabilityTags(
+                mutatesText: false,
+                requiresFocusGuard: true,
+                verifiable: false,
+                primitive: .inertKey
+            )
+        case .highlightNavigate:
+            return CapabilityTags(
+                mutatesText: false,
+                requiresFocusGuard: true,
+                verifiable: false,
+                primitive: .navigationChord
+            )
+        case .contentClick:
+            return CapabilityTags(
+                mutatesText: false,
+                requiresFocusGuard: true,
+                verifiable: false,
+                primitive: .targetedClick
+            )
+        case .explorerFileSwitch:
+            return CapabilityTags(
+                mutatesText: false,
+                requiresFocusGuard: true,
+                verifiable: false,
+                primitive: .navigationChord
             )
         case .openExistingFile:
             return CapabilityTags(

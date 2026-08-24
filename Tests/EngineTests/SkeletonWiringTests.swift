@@ -47,12 +47,15 @@ final class SkeletonWiringTests: XCTestCase {
         )
 
         let events = recorder.snapshot()
-        // scroll + wait + scroll + wait, twice + focusRestore
-        XCTAssertEqual(events.count, 9)
-        XCTAssertTrue(events.allSatisfy { $0.targetBundleID == "com.google.Chrome" })
-        XCTAssertEqual(Set(events.dropLast().map(\.actionKind)), Set(["scroll", "wait"]))
+        // Meta + (scroll + wait + scroll + wait) × 2 + focusRestore
+        XCTAssertGreaterThanOrEqual(events.count, 9)
+        XCTAssertTrue(events.contains { $0.actionKind == "runStarted" })
+        XCTAssertTrue(events.contains { $0.actionKind == "runCompleted" })
         XCTAssertEqual(events.last?.actionKind, "focusRestore")
-        XCTAssertTrue(events.allSatisfy { $0.result == .completed })
+        let nav = events.filter { ["scroll", "wait"].contains($0.actionKind) }
+        XCTAssertEqual(nav.count, 8)
+        XCTAssertTrue(nav.allSatisfy { $0.result == .completed })
+        XCTAssertTrue(nav.allSatisfy { $0.targetBundleID == "com.google.Chrome" })
     }
 
     func testSimulationSeamStillWorksForEngine() async {

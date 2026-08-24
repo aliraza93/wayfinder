@@ -25,9 +25,11 @@ final class AppSession: ObservableObject {
     @Published private(set) var workflowNames: [String] = []
     @Published var selectedWorkflow: String?
     @Published private(set) var isRunning = false
+    @Published private(set) var isPaused = false
     @Published private(set) var canStart = false
     @Published private(set) var lastMessage = ""
     @Published private(set) var saveConfirmationMessage: String?
+    @Published private(set) var progressLines: [String] = []
 
     let onboardingUI: OnboardingUIModel
     let editorUI: WorkflowEditorUIModel
@@ -43,8 +45,9 @@ final class AppSession: ObservableObject {
     private var runTask: Task<Void, Never>?
     private var monitor: UserSovereigntyMonitor?
     private var listenTap: SovereigntyListenTap?
-    private var stopHotKey: GlobalStopHotKey?
+    private var runHotKeys: RunControlHotKeys?
     private var activeRecorder: RunRecorder?
+    private var activeEngine: WorkflowEngine?
     private var saveBannerTask: Task<Void, Never>?
 
     init(
@@ -190,13 +193,26 @@ final class AppSession: ObservableObject {
 
         let sovereignty = UserSovereigntyMonitor(secureInput: SystemSecureInputProbe())
         let tap = SovereigntyListenTap(monitor: sovereignty)
-        tap.start()
-        let hotKey = GlobalStopHotKey(monitor: sovereignty)
-        hotKey.install()
+        // Start the listen tap *after* activate settles — menu-click / focus noise must not halt the run.
+        let hotKeys = RunControlHotKeys { [weak self] action in
+            Task { @MainActor in
+                guard let self else { return }
+                switch action {
+                case .stop:
+                    self.stop()
+                case .pause:
+                    self.pause()
+                case .resume:
+                    self.resume()
+                }
+            }
+        }
+        hotKeys.install()
 
         let clock = SystemClock()
         let timing = TimingPolicy(clock: clock)
-        let focus = FocusGuard(probe: SystemAXProbe(), timing: timing)
+        let axProbe = SystemAXProbe()
+        let focus = FocusGuard(probe: axProbe, timing: timing)
         let synth = EventSynth(
             focusGuard: focus,
             poster: CGEventPoster(),
@@ -206,28 +222,61 @@ final class AppSession: ObservableObject {
         let recorder = RunRecorder()
         let runner = WorkflowRunner(store: store)
         let resolver = AppEnumeratorTargetResolver()
+        let precondition = FocusTargetPreconditionProbe(probe: axProbe) { bundleID in
+            AppEnumerator().isRunning(bundleID: bundleID)
+        }
 
         monitor = sovereignty
         listenTap = tap
-        stopHotKey = hotKey
+        runHotKeys = hotKeys
         activeRecorder = recorder
         isRunning = true
-        runVM.markRunning(workflowName: name, steps: workflow.steps)
+        isPaused = false
+        runVM.markRunning(
+            workflowName: name,
+            steps: workflow.steps,
+            durationSeconds: workflow.loop.maxDurationSeconds
+        )
         let primaryBundleID = workflow.targets[0].bundleID
-        lastMessage = "Starting… bringing target frontmost"
+        lastMessage = "Starting… launching / focusing targets"
         syncRunUI()
 
         let started = Date()
         let activator = AppActivator()
         runTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            // Menu-bar Start leaves another app frontmost; FocusGuard refuses scroll until target is front.
-            let activated = activator.activate(bundleID: primaryBundleID)
+
+            // Launch every configured target (e.g. Chrome) so multi-app runs aren't stuck
+            // when the browser wasn't already open. Primary gets final focus.
+            for target in workflow.targets where target.bundleID != primaryBundleID {
+                _ = await activator.activateOrLaunch(bundleID: target.bundleID, timeoutSeconds: 6.0)
+            }
+
+            let activated = await activator.activateOrLaunch(
+                bundleID: primaryBundleID,
+                timeoutSeconds: 8.0
+            )
             if !activated {
-                self.finishFailure("Couldn’t activate \(primaryBundleID) — is it running?")
+                self.finishFailure(
+                    "Couldn’t open \(primaryBundleID) — install it or check the bundle ID on the target"
+                )
                 return
             }
-            try? await Task.sleep(nanoseconds: 350_000_000)
+
+            let focusReady = await Self.waitUntilFrontmost(
+                bundleID: primaryBundleID,
+                probe: axProbe,
+                timeoutSeconds: 3.0
+            )
+            if !focusReady {
+                self.finishFailure(
+                    "Opened \(primaryBundleID) but it never became frontmost — click its window, then Start again"
+                )
+                return
+            }
+
+            await sovereignty.reset()
+            tap.start()
 
             do {
                 let summary = try await runner.run(
@@ -236,9 +285,20 @@ final class AppSession: ObservableObject {
                     sovereignty: sovereignty,
                     timing: timing,
                     recorder: recorder,
-                    resolver: resolver
+                    resolver: resolver,
+                    preconditionProbe: precondition,
+                    engineHandler: { [weak self] engine in
+                        await MainActor.run {
+                            self?.activeEngine = engine
+                        }
+                    }
                 )
-                self.finishRun(events: summary.events, started: started, targetBundleID: primaryBundleID)
+                self.finishRun(
+                    events: summary.events,
+                    started: started,
+                    targetBundleID: primaryBundleID,
+                    endReason: summary.endReason
+                )
             } catch {
                 self.finishFailure(String(describing: error))
             }
@@ -257,15 +317,98 @@ final class AppSession: ObservableObject {
                     self.timelineVM.replace(with: events)
                     self.timelineUI.apply(self.timelineVM)
                     let elapsed = Date().timeIntervalSince(started)
-                    let idx = max(0, events.count - 1)
+                    let navEvents = events.filter {
+                        [
+                            "scroll",
+                            "pageNavigate",
+                            "arrowNavigate",
+                            "switchTab",
+                            "highlightNavigate",
+                            "contentClick",
+                            "explorerFileSwitch",
+                            "activateApp",
+                            "openExistingFile",
+                            "wait",
+                        ].contains($0.actionKind)
+                    }
+                    let idx = max(0, navEvents.count - 1)
                     self.runVM.updateProgress(
                         stepIndex: min(idx, max(0, workflow.steps.count - 1)),
                         steps: workflow.steps,
                         elapsed: elapsed,
-                        eventCount: events.count
+                        events: events
                     )
                     self.syncRunUI()
                 }
+
+                if let engine = await MainActor.run(body: { self?.activeEngine }) {
+                    let identity = await engine.currentReviewIdentity
+                    let next = await engine.nextReviewIdentity
+                    let completed = await engine.reviewTargetsCompleted
+                    let dwellElapsed = await engine.currentDwellElapsedSeconds
+                    let dwellAlloc = await engine.currentDwellAllocatedSeconds
+                    let phase = await engine.reviewUIPhase
+                    let action = await engine.currentActionKind
+                    await MainActor.run { [weak self] in
+                        guard let self, self.isRunning else { return }
+                        self.progressLines = self.reviewDashboardLines(
+                            workflowName: workflow.name,
+                            phase: phase,
+                            identity: identity,
+                            next: next,
+                            completed: completed,
+                            dwellElapsed: dwellElapsed,
+                            dwellAlloc: dwellAlloc,
+                            action: action,
+                            live: self.runVM.live
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// Polls until `bundleID` is frontmost or timeout.
+    private static func waitUntilFrontmost(
+        bundleID: String,
+        probe: SystemAXProbe,
+        timeoutSeconds: Double
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        var stableHits = 0
+        while Date() < deadline {
+            if probe.frontmostAppBundleID() == bundleID {
+                stableHits += 1
+                // ~150ms stable (3 × 50ms) before proceeding.
+                if stableHits >= 3 { return true }
+            } else {
+                stableHits = 0
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return probe.frontmostAppBundleID() == bundleID
+    }
+
+    func pause() {
+        Task {
+            await activeEngine?.pause()
+            await MainActor.run {
+                self.isPaused = true
+                self.runVM.markPaused()
+                self.lastMessage = "Paused"
+                self.syncRunUI()
+            }
+        }
+    }
+
+    func resume() {
+        Task {
+            await activeEngine?.resume()
+            await MainActor.run {
+                self.isPaused = false
+                self.runVM.markResumed()
+                self.lastMessage = "Resumed"
+                self.syncRunUI()
             }
         }
     }
@@ -273,24 +416,43 @@ final class AppSession: ObservableObject {
     func stop() {
         Task {
             await monitor?.requestStop()
+            await activeEngine?.requestStop()
         }
         liveStatusLine = "Stopping…"
     }
 
-    private func finishRun(events: [RunEvent], started: Date, targetBundleID: String) {
+    private func finishRun(
+        events: [RunEvent],
+        started: Date,
+        targetBundleID: String,
+        endReason: RunEndReason?
+    ) {
         teardownInput()
         timelineVM.replace(with: events)
         timelineUI.apply(timelineVM)
         let elapsed = Date().timeIntervalSince(started)
-        runVM.markIdle(eventCount: events.count, elapsedSeconds: elapsed)
-        let summary = events
-            .map { "\($0.actionKind):\($0.result.rawValue)" }
-            .joined(separator: ", ")
-        if events.contains(where: { $0.result == .failed }) {
+        let phase: RunUIPhase
+        switch endReason {
+        case .completed: phase = .completed
+        case .stopped: phase = .stopped
+        case .failed: phase = .failed
+        case nil: phase = events.contains(where: { $0.result == .failed }) ? .failed : .completed
+        }
+        let counts = RunLiveStatus.counts(from: events)
+        runVM.markIdle(eventCount: events.count, elapsedSeconds: elapsed, phase: phase)
+        let failedNav = events.contains {
+            ["scroll", "pageNavigate", "arrowNavigate"].contains($0.actionKind) && $0.result == .failed
+        }
+        let didNavigate = counts.scroll + counts.keyboard > 0
+        if !didNavigate, failedNav || phase == .failed {
             lastMessage =
-                "\(summary) — keep \(targetBundleID) frontmost while running (Start activates it first)"
+                "\(phase.title) — no navigation landed. Keep Cursor frontmost (don’t click away after Start)."
+        } else if failedNav {
+            lastMessage =
+                "\(phase.title) · scroll \(counts.scroll) · keys \(counts.keyboard) · \(RunLiveStatus.formatClock(elapsed)) — keep \(targetBundleID) frontmost"
         } else {
-            lastMessage = summary
+            lastMessage =
+                "\(phase.title) · scroll \(counts.scroll) · keys \(counts.keyboard) · \(RunLiveStatus.formatClock(elapsed))"
         }
         syncRunUI()
         refreshWorkflowNames()
@@ -298,7 +460,7 @@ final class AppSession: ObservableObject {
 
     private func finishFailure(_ message: String) {
         teardownInput()
-        runVM.markIdle(eventCount: 0)
+        runVM.markIdle(eventCount: 0, phase: .failed)
         lastMessage = message
         syncRunUI()
     }
@@ -306,25 +468,90 @@ final class AppSession: ObservableObject {
     private func teardownInput() {
         listenTap?.stop()
         listenTap = nil
-        stopHotKey?.uninstall()
-        stopHotKey = nil
+        runHotKeys?.uninstall()
+        runHotKeys = nil
         monitor = nil
         runTask = nil
         activeRecorder = nil
+        activeEngine = nil
         isRunning = false
+        isPaused = false
     }
 
     private func syncRunUI() {
         canStart = runVM.canStart
         liveStatusLine = runVM.live.summaryLine
+        progressLines = progressLines(from: runVM.live)
         workflowNames = runVM.workflowNames
         selectedWorkflow = runVM.selectedName
+    }
+
+    private func progressLines(from live: RunLiveStatus) -> [String] {
+        guard live.isRunning || live.phase == .paused else { return [] }
+        var lines = [live.phase.title]
+        if let duration = live.durationSeconds {
+            lines.append("Duration: \(RunLiveStatus.formatClock(duration))")
+        } else {
+            lines.append("Duration: until stopped")
+        }
+        lines.append("Elapsed: \(RunLiveStatus.formatClock(live.elapsedSeconds))")
+        if let remaining = live.remainingSeconds {
+            lines.append("Remaining: \(RunLiveStatus.formatClock(remaining))")
+        }
+        lines.append("Current action: \(live.currentStepLabel)")
+        lines.append("Scroll actions: \(live.scrollActionCount)")
+        lines.append("Keyboard actions: \(live.keyboardActionCount)")
+        return lines
+    }
+
+    private func reviewDashboardLines(
+        workflowName: String,
+        phase: String,
+        identity: String?,
+        next: String?,
+        completed: Int,
+        dwellElapsed: Double?,
+        dwellAlloc: Double?,
+        action: String?,
+        live: RunLiveStatus
+    ) -> [String] {
+        var lines: [String] = [
+            "Workflow: \(workflowName)",
+            "Status: \(phase)",
+        ]
+        if let identity, !identity.isEmpty {
+            lines.append("Current: \(identity)")
+        }
+        if let next, !next.isEmpty {
+            lines.append("Next: \(next)")
+        }
+        if let dwellElapsed, let dwellAlloc {
+            lines.append(
+                "Time on target: \(RunLiveStatus.formatClock(dwellElapsed)) / \(RunLiveStatus.formatClock(dwellAlloc))"
+            )
+        }
+        if let duration = live.durationSeconds {
+            lines.append(
+                "Session: \(RunLiveStatus.formatClock(live.elapsedSeconds)) / \(RunLiveStatus.formatClock(duration))"
+            )
+        } else {
+            lines.append("Session: \(RunLiveStatus.formatClock(live.elapsedSeconds)) / until stopped")
+        }
+        lines.append("Targets completed: \(completed)")
+        if let action, !action.isEmpty {
+            lines.append("Current action: \(action)")
+        }
+        return lines
     }
 }
 
 struct AppEnumeratorTargetResolver: WorkflowTargetResolver {
     private let enumerator = AppEnumerator()
+    private let activator = AppActivator()
+
     func isAvailable(bundleID: String) -> Bool {
-        enumerator.isRunning(bundleID: bundleID)
+        // Allow Start when the app is installed even if it isn't running yet —
+        // AppSession / RealExecutor will launch it.
+        enumerator.isRunning(bundleID: bundleID) || activator.isInstalled(bundleID: bundleID)
     }
 }

@@ -70,36 +70,89 @@ public final class OnboardingViewModel: @unchecked Sendable {
 /// Live run status for the menu bar (updated on main by the session controller).
 public struct RunLiveStatus: Equatable, Sendable {
     public var workflowName: String
-    public var isRunning: Bool
+    public var phase: RunUIPhase
     public var currentStepLabel: String
     public var nextStepLabel: String
     public var elapsedSeconds: Double
+    public var durationSeconds: Double?
+    public var remainingSeconds: Double?
     public var eventCount: Int
+    public var scrollActionCount: Int
+    public var keyboardActionCount: Int
+
+    public var isRunning: Bool {
+        phase == .running || phase == .paused
+    }
 
     public init(
         workflowName: String = "",
-        isRunning: Bool = false,
+        phase: RunUIPhase = .idle,
         currentStepLabel: String = "—",
         nextStepLabel: String = "—",
         elapsedSeconds: Double = 0,
-        eventCount: Int = 0
+        durationSeconds: Double? = nil,
+        remainingSeconds: Double? = nil,
+        eventCount: Int = 0,
+        scrollActionCount: Int = 0,
+        keyboardActionCount: Int = 0
     ) {
         self.workflowName = workflowName
-        self.isRunning = isRunning
+        self.phase = phase
         self.currentStepLabel = currentStepLabel
         self.nextStepLabel = nextStepLabel
         self.elapsedSeconds = elapsedSeconds
+        self.durationSeconds = durationSeconds
+        self.remainingSeconds = remainingSeconds
         self.eventCount = eventCount
+        self.scrollActionCount = scrollActionCount
+        self.keyboardActionCount = keyboardActionCount
     }
 
     public var summaryLine: String {
-        if isRunning {
-            return "Running \(workflowName): \(currentStepLabel) → next \(nextStepLabel) (\(Int(elapsedSeconds))s)"
+        switch phase {
+        case .running, .paused:
+            var lines = ["\(phase.title)"]
+            if let durationSeconds {
+                lines.append("Duration: \(Self.formatClock(durationSeconds))")
+            } else if phase == .running || phase == .paused {
+                lines.append("Duration: until stopped")
+            }
+            lines.append("Elapsed: \(Self.formatClock(elapsedSeconds))")
+            if let remainingSeconds {
+                lines.append("Remaining: \(Self.formatClock(remainingSeconds))")
+            }
+            lines.append("Current: \(currentStepLabel)")
+            lines.append("Scroll: \(scrollActionCount)  Keys: \(keyboardActionCount)")
+            return lines.joined(separator: " · ")
+        case .idle:
+            if workflowName.isEmpty { return "Idle" }
+            return "Last: \(workflowName) (\(eventCount) events)"
+        case .completed, .stopped, .failed:
+            return "\(phase.title): \(workflowName) (\(eventCount) events)"
         }
-        if workflowName.isEmpty {
-            return "Idle"
+    }
+
+    public static func formatClock(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        let m = total / 60
+        let s = total % 60
+        return String(format: "%02d:%02d", m, s)
+    }
+
+    public static func counts(from events: [RunEvent]) -> (scroll: Int, keyboard: Int) {
+        var scroll = 0
+        var keyboard = 0
+        for event in events where event.result == .completed {
+            switch event.actionKind {
+            case "scroll":
+                scroll += 1
+            case "pageNavigate", "arrowNavigate":
+                keyboard += 1
+            default:
+                break
+            }
         }
-        return "Last: \(workflowName) (\(eventCount) events)"
+        return (scroll, keyboard)
     }
 }
 
@@ -151,6 +204,7 @@ public final class RunSessionViewModel: @unchecked Sendable {
 
     private var accessibilityGranted = false
     private var isRunning = false
+    private var configuredDuration: Double?
 
     public init() {}
 
@@ -172,42 +226,83 @@ public final class RunSessionViewModel: @unchecked Sendable {
         recomputeCanStart()
     }
 
-    public func markRunning(workflowName: String, steps: [Step]) {
+    public func markRunning(workflowName: String, steps: [Step], durationSeconds: Double?) {
         isRunning = true
+        configuredDuration = durationSeconds
         live = RunLiveStatus(
             workflowName: workflowName,
-            isRunning: true,
+            phase: .running,
             currentStepLabel: Self.label(for: steps.first?.action),
             nextStepLabel: Self.label(for: steps.dropFirst().first?.action),
             elapsedSeconds: 0,
+            durationSeconds: durationSeconds,
+            remainingSeconds: durationSeconds,
             eventCount: 0
         )
         recomputeCanStart()
     }
 
-    public func updateProgress(stepIndex: Int, steps: [Step], elapsed: Double, eventCount: Int) {
+    public func markPaused() {
+        guard isRunning else { return }
+        var next = live
+        next.phase = .paused
+        live = next
+    }
+
+    public func markResumed() {
+        guard isRunning else { return }
+        var next = live
+        next.phase = .running
+        live = next
+    }
+
+    public func updateProgress(
+        stepIndex: Int,
+        steps: [Step],
+        elapsed: Double,
+        events: [RunEvent],
+        currentActionOverride: String? = nil
+    ) {
         let current = steps.indices.contains(stepIndex) ? steps[stepIndex].action : nil
         let next = steps.indices.contains(stepIndex + 1) ? steps[stepIndex + 1].action : nil
+        let counts = RunLiveStatus.counts(from: events)
+        let remaining: Double?
+        if let duration = configuredDuration {
+            remaining = max(0, duration - elapsed)
+        } else {
+            remaining = nil
+        }
         live = RunLiveStatus(
             workflowName: live.workflowName,
-            isRunning: true,
-            currentStepLabel: Self.label(for: current),
+            phase: live.phase == .paused ? .paused : .running,
+            currentStepLabel: currentActionOverride ?? Self.label(for: current),
             nextStepLabel: Self.label(for: next),
             elapsedSeconds: elapsed,
-            eventCount: eventCount
+            durationSeconds: configuredDuration,
+            remainingSeconds: remaining,
+            eventCount: events.count,
+            scrollActionCount: counts.scroll,
+            keyboardActionCount: counts.keyboard
         )
     }
 
-    public func markIdle(eventCount: Int, elapsedSeconds: Double? = nil) {
+    public func markIdle(eventCount: Int, elapsedSeconds: Double? = nil, phase: RunUIPhase = .idle) {
         isRunning = false
+        let counts = RunLiveStatus.counts(from: [])
         live = RunLiveStatus(
             workflowName: live.workflowName,
-            isRunning: false,
+            phase: phase,
             currentStepLabel: "—",
             nextStepLabel: "—",
             elapsedSeconds: elapsedSeconds ?? live.elapsedSeconds,
-            eventCount: eventCount
+            durationSeconds: configuredDuration,
+            remainingSeconds: nil,
+            eventCount: eventCount,
+            scrollActionCount: live.scrollActionCount,
+            keyboardActionCount: live.keyboardActionCount
         )
+        _ = counts
+        configuredDuration = nil
         recomputeCanStart()
     }
 

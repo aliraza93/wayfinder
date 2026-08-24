@@ -184,8 +184,9 @@ final class WorkflowMenuController: ObservableObject {
 /// Bridges AppEnumerator into WorkflowTargetResolver.
 struct EnumeratorTargetResolver: WorkflowTargetResolver {
     private let enumerator = AppEnumerator()
+    private let activator = AppActivator()
 
     func isAvailable(bundleID: String) -> Bool {
-        enumerator.isRunning(bundleID: bundleID)
+        enumerator.isRunning(bundleID: bundleID) || activator.isInstalled(bundleID: bundleID)
     }
 }

@@ -13,7 +13,7 @@ Everything here is planning + control documentation. The actual code repository 
 5. **`docs/05-execution-protocol.md`** — how to actually run the build: the per-milestone loop, the evidence to collect, the reusable Claude review prompt, and the final MVP-complete checklist.
 6. **`docs/testing.md`** — test pyramid, SafetyTests merge gate, manual matrix, and provisioned GUI runner (TCC cannot be granted in ordinary CI).
 7. **`docs/install.md`** / **`docs/privacy.md`** — end-user install, Accessibility, logs, and privacy (Developer ID DMG; no App Sandbox).
-8. **`AGENTS.md`** (repo root) — binding rules Cursor loads automatically every session (read-only invariant, no-deception rule, safety gate, module boundaries). You don't need to paste these; Cursor reads them. They back-stop the prompts.
+8. **`AGENTS.md`** (repo root) — binding rules Cursor loads every session. **Owner feature prompts that expand read-only Cursor/Chrome navigation supersede older “MVP freeze” language** in the roadmap (e.g. permanent ban on tab switching). Mutation, deception, and safety-gate rules still apply.
 
 ## Before you paste CURSOR-01
 

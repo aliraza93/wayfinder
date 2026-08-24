@@ -18,7 +18,7 @@ public struct SafetyPolicy: Sendable {
         }
 
         switch tags.primitive {
-        case .scrollWheel, .inertKey:
+        case .scrollWheel, .inertKey, .navigationChord, .targetedClick:
             // Synthetic input primitives — allowed when non-mutating.
             return .allow
         case .appControl:

@@ -8,18 +8,52 @@ struct WorkflowEditorView: View {
 
     var body: some View {
         HSplitView {
-            paletteColumn
-                .frame(minWidth: 200, idealWidth: 220)
+            if !model.durationPreset.isTimedReview {
+                paletteColumn
+                    .frame(minWidth: 200, idealWidth: 220, maxWidth: 260)
+            }
 
-            editorColumn
-                .frame(minWidth: 480)
-                .padding(16)
+            VStack(spacing: 0) {
+                ScrollView {
+                    editorForm
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Divider()
+                editorFooter
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+            }
+            .frame(minWidth: 520)
         }
-        .frame(minWidth: 780, minHeight: 520)
-        .onAppear { model.refreshApps() }
-        .onChange(of: model.name) { _ in model.pushName() }
-        .onChange(of: model.loopEnabled) { _ in model.pushLoop() }
-        .onChange(of: model.maxIterations) { _ in model.pushLoop() }
+        .frame(minWidth: 820, minHeight: 560)
+        .onAppear {
+            model.refreshApps()
+            model.refreshSavedNames()
+            if model.steps.isEmpty, model.durationPreset.isTimedReview {
+                model.pushDuration()
+            }
+        }
+        .onChange(of: model.name) { _ in
+            guard !model.isSyncingFromStore else { return }
+            model.pushName()
+        }
+        .onChange(of: model.loopEnabled) { _ in
+            guard !model.isSyncingFromStore else { return }
+            model.pushLoop()
+        }
+        .onChange(of: model.maxIterations) { _ in
+            guard !model.isSyncingFromStore else { return }
+            model.pushLoop()
+        }
+        .onChange(of: model.durationPreset) { _ in
+            guard !model.isSyncingFromStore else { return }
+            model.pushDuration()
+        }
+        .onChange(of: model.customDurationMinutes) { _ in
+            guard !model.isSyncingFromStore else { return }
+            model.pushDuration()
+        }
         .onChange(of: model.shouldDismiss) { should in
             if should {
                 dismiss()
@@ -32,7 +66,7 @@ struct WorkflowEditorView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Action palette")
                 .font(.headline)
-            Text("Only inert navigation — no typing, paste, save, or chords.")
+            Text("Read-only navigation — no typing, paste, save, or delete.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -53,25 +87,69 @@ struct WorkflowEditorView: View {
         .padding(12)
     }
 
-    private var editorColumn: some View {
+    private var editorForm: some View {
         VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 10) {
+                Text("Open")
+                    .foregroundStyle(.secondary)
+                Picker("", selection: $model.selectedSavedName) {
+                    Text("New workflow").tag("")
+                    ForEach(model.savedWorkflowNames, id: \.self) { name in
+                        Text(name).tag(name)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: 320, alignment: .leading)
+                .accessibilityIdentifier("editor.openExisting")
+                .onChange(of: model.selectedSavedName) { name in
+                    guard !model.isSyncingFromStore else { return }
+                    if name.isEmpty {
+                        model.startNewWorkflow()
+                    } else {
+                        model.loadExisting(name)
+                    }
+                }
+
+                Button("Refresh list") {
+                    model.refreshSavedNames()
+                }
+                .help("Reload names from workflows.json")
+                Spacer(minLength: 0)
+            }
+
             TextField("Workflow name", text: $model.name)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("editor.name")
 
             targetsCard
-            stepsCard
+            durationCard
 
-            HStack(alignment: .center, spacing: 12) {
-                Toggle("Loop", isOn: $model.loopEnabled)
-                Stepper(
-                    "Max iterations: \(model.maxIterations)",
-                    value: $model.maxIterations,
-                    in: 1...50
-                )
-                .disabled(!model.loopEnabled)
-                .opacity(model.loopEnabled ? 1 : 0.45)
-                .help(model.loopEnabled ? "Maximum loop count" : "Enable Loop to set iterations")
+            if model.durationPreset.isTimedReview {
+                reviewSessionCard
+                reviewCursorCard
+                reviewChromeCard
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("What it does")
+                            .font(.headline)
+                        Text(HonestCopy.does)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(HonestCopy.tabFileLimits)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(HonestCopy.neverDoes)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                stepsCard
             }
 
             if let error = model.errorMessage {
@@ -80,17 +158,173 @@ struct WorkflowEditorView: View {
                     .font(.callout)
                     .accessibilityIdentifier("editor.error")
             }
+        }
+    }
 
-            HStack {
-                Spacer()
-                Button("Validate") { model.validateOnly() }
-                    .accessibilityIdentifier("editor.validate")
-                Button("Save workflow") { model.save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("editor.save")
-                    .help("Save workflow (Return / ⌘S)")
+    private var editorFooter: some View {
+        HStack {
+            Spacer()
+            Button("Validate") { model.validateOnly() }
+                .accessibilityIdentifier("editor.validate")
+            Button("Save workflow") { model.save() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("editor.save")
+                .help("Save workflow (Return / ⌘S)")
+        }
+    }
+
+    private var durationCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("How long?")
+                    .font(.headline)
+                Picker("Duration", selection: $model.durationPreset) {
+                    ForEach(RunDurationPreset.timedOnly) { preset in
+                        Text(preset.title).tag(preset)
+                    }
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("editor.duration")
+
+                if model.durationPreset == .custom {
+                    Stepper(
+                        "Minutes: \(model.customDurationMinutes)",
+                        value: $model.customDurationMinutes,
+                        in: 1...720
+                    )
+                }
+
+                Text("Session length for Read & Review Workspace. Dwell per file/tab is configured below.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var reviewSessionCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Target dwell & navigation")
+                    .font(.headline)
+                HStack {
+                    Text("Min dwell (sec)")
+                    Spacer()
+                    Stepper(
+                        "\(Int(model.dwellMinSeconds))",
+                        value: $model.dwellMinSeconds,
+                        in: 5...600,
+                        step: 5
+                    )
+                }
+                HStack {
+                    Text("Max dwell (sec)")
+                    Spacer()
+                    Stepper(
+                        "\(Int(model.dwellMaxSeconds))",
+                        value: $model.dwellMaxSeconds,
+                        in: 10...900,
+                        step: 5
+                    )
+                }
+                Picker("Speed", selection: $model.speedPreset) {
+                    ForEach(NavigationSpeedPreset.allCases) { preset in
+                        Text(preset.title).tag(preset)
+                    }
+                }
+                if model.speedPreset == .custom {
+                    HStack {
+                        Text("Interval (sec)")
+                        Spacer()
+                        TextField(
+                            "0.35",
+                            value: $model.customIntervalSeconds,
+                            format: .number.precision(.fractionLength(2))
+                        )
+                        .frame(width: 72)
+                        .textFieldStyle(.roundedBorder)
+                    }
+                }
+                Picker("Target order", selection: $model.targetOrder) {
+                    ForEach(ReviewTargetOrder.allCases, id: \.self) { order in
+                        Text(order.title).tag(order)
+                    }
+                }
+                Toggle("Loop targets until session ends", isOn: $model.loopTargets)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: model.dwellMinSeconds) { _ in model.pushReviewSettings() }
+            .onChange(of: model.dwellMaxSeconds) { _ in model.pushReviewSettings() }
+            .onChange(of: model.speedPreset) { _ in model.pushReviewSettings() }
+            .onChange(of: model.customIntervalSeconds) { _ in model.pushReviewSettings() }
+            .onChange(of: model.targetOrder) { _ in model.pushReviewSettings() }
+            .onChange(of: model.loopTargets) { _ in model.pushReviewSettings() }
+        }
+    }
+
+    private var reviewCursorCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Cursor files")
+                    .font(.headline)
+                TextField("Workspace (~/Projects/…)", text: $model.workspacePath)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: model.workspacePath) { _ in model.pushReviewSettings() }
+                HStack {
+                    TextField("Relative or absolute file path", text: $model.fileDraft)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Add file") { model.addFile() }
+                }
+                if model.filePaths.isEmpty {
+                    Text("Add existing project files to open and crawl in order.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(Array(model.filePaths.enumerated()), id: \.offset) { index, path in
+                        HStack {
+                            Text("\(index + 1). \(path)")
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                            Button(role: .destructive) { model.removeFile(at: index) } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var reviewChromeCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Chrome tabs")
+                    .font(.headline)
+                HStack {
+                    TextField("Tab label (for status / logs)", text: $model.tabDraft)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Add tab") { model.addTab() }
+                }
+                Text("Labels identify tabs in the dashboard. Switching uses allowlisted Ctrl+Tab among open tabs.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(Array(model.tabLabels.enumerated()), id: \.offset) { index, label in
+                    HStack {
+                        Text("\(index + 1). \(label)")
+                        Spacer()
+                        Button(role: .destructive) { model.removeTab(at: index) } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -159,7 +393,7 @@ struct WorkflowEditorView: View {
 
     private var stepsCard: some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Steps")
                     .font(.headline)
 
@@ -168,7 +402,7 @@ struct WorkflowEditorView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 6)
                         .accessibilityIdentifier("editor.stepsEmpty")
                 } else {
                     VStack(spacing: 0) {
@@ -176,25 +410,81 @@ struct WorkflowEditorView: View {
                             if index > 0 {
                                 Divider()
                             }
-                            HStack {
+                            HStack(alignment: .center, spacing: 8) {
                                 Text("\(index + 1).")
                                     .foregroundStyle(.secondary)
-                                    .frame(width: 28, alignment: .trailing)
-                                Text(title)
-                                Spacer()
+                                    .frame(width: 24, alignment: .trailing)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(title)
+                                        .lineLimit(1)
+                                    stepEditors(for: index)
+                                }
+                                Spacer(minLength: 8)
                                 Button("↑") { model.moveUp(index) }
                                     .disabled(index == 0)
                                 Button("↓") { model.moveDown(index) }
                                     .disabled(index == model.steps.count - 1)
                                 Button("Remove") { model.removeStep(at: index) }
                             }
-                            .padding(.vertical, 8)
+                            .padding(.vertical, 6)
                         }
                     }
                     .accessibilityIdentifier("editor.steps")
                 }
             }
             .padding(4)
+        }
+    }
+
+    @ViewBuilder
+    private func stepEditors(for index: Int) -> some View {
+        switch model.stepKind(at: index) {
+        case .scroll:
+            Stepper(
+                "Amount: \(model.scrollAmount(at: index))",
+                value: Binding(
+                    get: { model.scrollAmount(at: index) },
+                    set: { model.setScrollAmount(at: index, amount: $0) }
+                ),
+                in: 1...100
+            )
+            .font(.caption)
+            .controlSize(.small)
+        case .arrow:
+            HStack(spacing: 12) {
+                Stepper(
+                    "×\(model.arrowPresses(at: index))",
+                    value: Binding(
+                        get: { model.arrowPresses(at: index) },
+                        set: { model.setArrow(at: index, presses: $0, interval: model.arrowInterval(at: index)) }
+                    ),
+                    in: 1...20
+                )
+                .font(.caption)
+                Stepper(
+                    "\(String(format: "%.1f", model.arrowInterval(at: index)))s",
+                    value: Binding(
+                        get: { model.arrowInterval(at: index) },
+                        set: { model.setArrow(at: index, presses: model.arrowPresses(at: index), interval: $0) }
+                    ),
+                    in: 0...5,
+                    step: 0.05
+                )
+                .font(.caption)
+            }
+        case .wait:
+            Stepper(
+                "\(String(format: "%.1f", model.waitSeconds(at: index)))s",
+                value: Binding(
+                    get: { model.waitSeconds(at: index) },
+                    set: { model.setWait(at: index, seconds: $0) }
+                ),
+                in: 0.1...60,
+                step: 0.5
+            )
+            .font(.caption)
+        case .other:
+            EmptyView()
         }
     }
 }
@@ -205,18 +495,43 @@ struct EditorTargetRow: Equatable {
     var classification: String
 }
 
+enum EditorStepKind {
+    case scroll
+    case arrow
+    case wait
+    case other
+}
+
 @MainActor
 final class WorkflowEditorUIModel: ObservableObject {
     @Published var name: String = "Untitled"
     @Published var loopEnabled = false
     @Published var maxIterations = 1
+    @Published var durationPreset: RunDurationPreset = .oneMinute
+    @Published var customDurationMinutes = 15
+    @Published var shuffleSteps = true
+    @Published var dwellMinSeconds: Double = 30
+    @Published var dwellMaxSeconds: Double = 180
+    @Published var speedPreset: NavigationSpeedPreset = .normal
+    @Published var customIntervalSeconds: Double = 0.35
+    @Published var targetOrder: ReviewTargetOrder = .sequential
+    @Published var loopTargets = true
+    @Published var workspacePath = ""
+    @Published var fileDraft = ""
+    @Published var tabDraft = ""
+    @Published private(set) var filePaths: [String] = []
+    @Published private(set) var tabLabels: [String] = []
     @Published var selectedRunningIndex = -1
     @Published var selectedClass: TargetAppClass = .generic
+    @Published var selectedSavedName: String = ""
+    @Published private(set) var savedWorkflowNames: [String] = []
     @Published private(set) var runningApps: [(bundleID: String, displayName: String)] = []
     @Published private(set) var targets: [EditorTargetRow] = []
     @Published private(set) var steps: [String] = []
     @Published private(set) var errorMessage: String?
     @Published private(set) var shouldDismiss = false
+    /// True while copying store → UI so `onChange` handlers don’t rewrite the draft.
+    @Published private(set) var isSyncingFromStore = false
 
     /// Called after a successful persist (parent shows transient confirmation).
     var onSuccessfulSave: ((String) -> Void)?
@@ -234,12 +549,88 @@ final class WorkflowEditorUIModel: ObservableObject {
         syncFromVM()
     }
 
+    func refreshSavedNames() {
+        savedWorkflowNames = viewModel.savedWorkflowNames()
+        // Don’t clear selection here — that would fire Open→New and wipe the form.
+        if !selectedSavedName.isEmpty, !savedWorkflowNames.contains(selectedSavedName) {
+            isSyncingFromStore = true
+            selectedSavedName = ""
+            isSyncingFromStore = false
+        }
+    }
+
+    func loadExisting(_ name: String) {
+        guard viewModel.loadNamed(name) else {
+            errorMessage = "Couldn’t load “\(name)”"
+            refreshSavedNames()
+            return
+        }
+        // Timed workflows always use the built-in fast random pool (ignore old slow steps).
+        if viewModel.draft.maxDurationSeconds != nil || viewModel.draft.untilStopped {
+            viewModel.applyTimedReviewSteps()
+            viewModel.setShuffleSteps(true)
+        }
+        syncFromVM(selectedName: name)
+        errorMessage = nil
+    }
+
+    func startNewWorkflow() {
+        viewModel.resetDraft()
+        syncFromVM(selectedName: "")
+        errorMessage = nil
+    }
+
     func pushName() {
         viewModel.setName(name)
     }
 
     func pushLoop() {
-        viewModel.setLoop(enabled: loopEnabled, maxIterations: maxIterations, maxDurationSeconds: nil)
+        pushDuration()
+    }
+
+    func pushDuration() {
+        let customSeconds = Double(customDurationMinutes) * 60
+        viewModel.setDurationPreset(durationPreset, customSeconds: customSeconds)
+        pushReviewSettings()
+        syncFromVM(selectedName: selectedSavedName)
+    }
+
+    func pushReviewSettings() {
+        guard !isSyncingFromStore else { return }
+        var settings = viewModel.draft.review
+        settings.workspacePath = workspacePath
+        settings.filePaths = filePaths
+        settings.chromeTabLabels = tabLabels
+        settings.dwellMinSeconds = dwellMinSeconds
+        settings.dwellMaxSeconds = dwellMaxSeconds
+        settings.speed = speedPreset
+        settings.customIntervalSeconds = customIntervalSeconds
+        settings.targetOrder = targetOrder
+        settings.loopTargets = loopTargets
+        viewModel.setReviewSettings(settings)
+        syncFromVM(selectedName: selectedSavedName)
+    }
+
+    func addFile() {
+        viewModel.addReviewFilePath(fileDraft)
+        fileDraft = ""
+        syncFromVM()
+    }
+
+    func removeFile(at index: Int) {
+        viewModel.removeReviewFilePath(at: index)
+        syncFromVM()
+    }
+
+    func addTab() {
+        viewModel.addChromeTabLabel(tabDraft)
+        tabDraft = ""
+        syncFromVM()
+    }
+
+    func removeTab(at index: Int) {
+        viewModel.removeChromeTabLabel(at: index)
+        syncFromVM()
     }
 
     func addPaletteItem(_ item: ActionPaletteItem) {
@@ -260,6 +651,9 @@ final class WorkflowEditorUIModel: ObservableObject {
         guard selectedRunningIndex >= 0, selectedRunningIndex < runningApps.count else { return }
         let app = runningApps[selectedRunningIndex]
         viewModel.addTarget(bundleID: app.bundleID, displayName: app.displayName, classification: selectedClass)
+        if durationPreset.isTimedReview {
+            viewModel.applyTimedReviewSteps()
+        }
         syncFromVM()
         errorMessage = nil
     }
@@ -286,9 +680,62 @@ final class WorkflowEditorUIModel: ObservableObject {
         syncFromVM()
     }
 
+    func stepKind(at index: Int) -> EditorStepKind {
+        guard viewModel.draft.steps.indices.contains(index) else { return .other }
+        switch viewModel.draft.steps[index].action {
+        case .scroll: return .scroll
+        case .arrowNavigate: return .arrow
+        case .wait: return .wait
+        default: return .other
+        }
+    }
+
+    func scrollAmount(at index: Int) -> Int {
+        guard viewModel.draft.steps.indices.contains(index),
+              case .scroll(_, let amount) = viewModel.draft.steps[index].action
+        else { return 1 }
+        return amount
+    }
+
+    func setScrollAmount(at index: Int, amount: Int) {
+        viewModel.setScrollAmount(at: index, amount: amount)
+        syncFromVM()
+    }
+
+    func arrowPresses(at index: Int) -> Int {
+        guard viewModel.draft.steps.indices.contains(index),
+              case .arrowNavigate(_, let presses, _) = viewModel.draft.steps[index].action
+        else { return 1 }
+        return presses
+    }
+
+    func arrowInterval(at index: Int) -> Double {
+        guard viewModel.draft.steps.indices.contains(index),
+              case .arrowNavigate(_, _, let interval) = viewModel.draft.steps[index].action
+        else { return 0.5 }
+        return interval
+    }
+
+    func setArrow(at index: Int, presses: Int, interval: Double) {
+        viewModel.setArrowNavigate(at: index, presses: presses, intervalSeconds: interval)
+        syncFromVM()
+    }
+
+    func waitSeconds(at index: Int) -> Double {
+        guard viewModel.draft.steps.indices.contains(index),
+              case .wait(let seconds) = viewModel.draft.steps[index].action
+        else { return 1 }
+        return seconds
+    }
+
+    func setWait(at index: Int, seconds: Double) {
+        viewModel.setWaitSeconds(at: index, seconds: seconds)
+        syncFromVM()
+    }
+
     func validateOnly() {
         pushName()
-        pushLoop()
+        pushDuration()
         switch viewModel.validateDraft() {
         case .success:
             errorMessage = nil
@@ -300,12 +747,13 @@ final class WorkflowEditorUIModel: ObservableObject {
     /// Validates then persists. Invalid → keep open with red error. Valid → persist, dismiss, notify parent.
     func save() {
         pushName()
-        pushLoop()
+        pushDuration()
         var flow = WorkflowEditorSaveFlow()
         flow.apply(result: viewModel.save())
         errorMessage = flow.errorMessage
         if let name = flow.confirmationName {
-            syncFromVM()
+            syncFromVM(selectedName: name)
+            refreshSavedNames()
             onSuccessfulSave?(name)
         }
         shouldDismiss = flow.shouldDismiss
@@ -315,10 +763,34 @@ final class WorkflowEditorUIModel: ObservableObject {
         shouldDismiss = false
     }
 
-    private func syncFromVM() {
+    private func syncFromVM(selectedName: String? = nil) {
+        isSyncingFromStore = true
+        defer { isSyncingFromStore = false }
+
         name = viewModel.draft.name
         loopEnabled = viewModel.draft.loopEnabled
         maxIterations = viewModel.draft.maxIterations
+        durationPreset = RunDurationPreset.infer(
+            maxDurationSeconds: viewModel.draft.maxDurationSeconds,
+            untilStopped: viewModel.draft.untilStopped,
+            loopEnabled: viewModel.draft.loopEnabled
+        )
+        shuffleSteps = viewModel.draft.shuffleSteps
+        dwellMinSeconds = viewModel.draft.review.dwellMinSeconds
+        dwellMaxSeconds = viewModel.draft.review.dwellMaxSeconds
+        speedPreset = viewModel.draft.review.speed
+        customIntervalSeconds = viewModel.draft.review.customIntervalSeconds
+        targetOrder = viewModel.draft.review.targetOrder
+        loopTargets = viewModel.draft.review.loopTargets
+        workspacePath = viewModel.draft.review.workspacePath
+        filePaths = viewModel.draft.review.filePaths
+        tabLabels = viewModel.draft.review.chromeTabLabels
+        if durationPreset == .custom, let seconds = viewModel.draft.maxDurationSeconds {
+            customDurationMinutes = max(1, Int((seconds / 60).rounded()))
+        }
+        if let selectedName {
+            selectedSavedName = selectedName
+        }
         runningApps = viewModel.runningApps
         targets = viewModel.draft.targets.map { target in
             EditorTargetRow(

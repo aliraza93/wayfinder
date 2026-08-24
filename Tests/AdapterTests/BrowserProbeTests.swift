@@ -109,7 +109,9 @@ final class BrowserProbeTests: XCTestCase {
     func testNoTabSwitchPrimitiveExists() {
         var adapter = BrowserAdapter(probe: FixedBrowserProbe(result: .dependable))
         adapter.prepare(target: chromeTarget)
-        // Only scroll / pageNavigate resolve; nothing tab-related in ActionKind or primitives.
+        // Tab switch is a navigation chord rewritten for RealExecutor — not an inert BrowserPrimitive.
+        XCTAssertNil(adapter.selectPrimitive(for: .switchTab(direction: .next)))
+        XCTAssertEqual(adapter.rewrite(.switchTab(direction: .next)), .switchTab(direction: .next))
         XCTAssertNil(adapter.selectPrimitive(for: .wait(seconds: 1)))
         XCTAssertNil(adapter.selectPrimitive(for: .activateApp(bundleID: "com.google.Chrome")))
         XCTAssertNil(adapter.rewrite(.switchWindow(direction: .next)))
