@@ -1,0 +1,17 @@
+---
+description: Git authorship and commit message style
+alwaysApply: true
+---
+
+# Git authorship
+
+- **Never run `git commit`, `git commit --amend`, or `git push` unless the user explicitly asks in that message.** Prefer preparing the diff and letting the user commit.
+- **Never** add `Co-authored-by: Cursor`, `Co-authored-by: cursoragent`, `Made-with: Cursor`, or any Cursor/Agent trailer to commit messages.
+- Cursor may **inject** `--trailer "Co-authored-by: Cursor <cursoragent@cursor.com>"` into agent shell commands even when not requested. Work around it: commit via `git commit -F <file>` inside a local script (not an inline `git commit -m`), rely on `.git/hooks/commit-msg` to strip trailers, then verify `git log -1` has no Cursor co-author before push. If a trailer still appears, rewrite the message before pushing.
+- Commit **Author** and **Committer** must remain the user's git identity only.
+
+# Commit message style
+
+- Messages must be **purely task-related**: what changed and why.
+- **Do not** mention milestone/prompt labels (`CURSOR-02`, `M1`, “prompt 03”, roadmap IDs, etc.) in the subject or body.
+- Prefer: `Add Domain action model and capability tags` — not: `CURSOR-02 domain model`.

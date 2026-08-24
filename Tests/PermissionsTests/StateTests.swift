@@ -66,8 +66,11 @@ final class StateTests: XCTestCase {
         let permission = AccessibilityPermission(probe: probe) { opened.append($0) }
 
         XCTAssertEqual(permission.requestAccess(), .granted)
-        XCTAssertEqual(probe.promptCalls, 1)
+        // Already trusted → silent check only; never prompt or open Settings.
+        XCTAssertEqual(probe.promptCalls, 0)
+        XCTAssertEqual(probe.silentCalls, 1)
         XCTAssertTrue(opened.isEmpty)
+        XCTAssertFalse(permission.hasPrompted)
     }
 
     func testForegroundRecheckFlipsToGrantedWithoutRelaunch() {

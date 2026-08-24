@@ -141,4 +141,90 @@ final class ViewModelTests: XCTestCase {
         XCTAssertFalse(HonestCopy.tagline.isEmpty)
         XCTAssertTrue(HonestCopy.neverDoes.lowercased().contains("never"))
     }
+
+    func testHumanStepTitlesMatchPalette() {
+        XCTAssertEqual(
+            ActionPaletteItem.humanTitle(for: .scroll(direction: .down, amount: 1)),
+            ActionPaletteItem.scrollDown.title
+        )
+        XCTAssertEqual(
+            ActionPaletteItem.humanTitle(for: .pageNavigate(.pageDown)),
+            ActionPaletteItem.pageDown.title
+        )
+        XCTAssertNotEqual(
+            ActionPaletteItem.humanTitle(for: .pageNavigate(.pageDown)),
+            "page pageDown"
+        )
+    }
+
+    func testInvalidSaveDoesNotPersistAndDoesNotDismiss() throws {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WaypointEditorInvalid-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let store = ConfigStore(baseDirectory: temp)
+        let vm = WorkflowEditorViewModel(store: store)
+        vm.setName("Incomplete")
+        // No targets / steps → invalid.
+        let result = vm.save()
+        guard case .failure(.noTargets) = result else {
+            return XCTFail("expected noTargets, got \(result)")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.workflowsFileURL.path))
+
+        var flow = WorkflowEditorSaveFlow()
+        flow.apply(result: result)
+        XCTAssertFalse(flow.shouldDismiss)
+        XCTAssertNil(flow.confirmationName)
+        XCTAssertEqual(flow.errorMessage, WorkflowEditorSaveFlow.describe(.noTargets))
+    }
+
+    func testValidSavePersistsDismissesAndEmitsConfirmationName() throws {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WaypointEditorValid-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let store = ConfigStore(baseDirectory: temp)
+        let vm = WorkflowEditorViewModel(store: store)
+        vm.setName("Browse cursor")
+        vm.addTarget(bundleID: "com.todesktop.app", displayName: "Cursor", classification: .editor)
+        vm.addStep(from: .scrollDown)
+
+        let result = vm.save()
+        guard case .success(let workflow) = result else {
+            return XCTFail("expected success, got \(result)")
+        }
+        XCTAssertEqual(workflow.name, "Browse cursor")
+        let loaded = try store.load()
+        XCTAssertEqual(loaded.workflows.count, 1)
+
+        var flow = WorkflowEditorSaveFlow()
+        flow.apply(result: result)
+        XCTAssertTrue(flow.shouldDismiss)
+        XCTAssertEqual(flow.confirmationName, "Browse cursor")
+        XCTAssertNil(flow.errorMessage)
+    }
+
+    func testTransientConfirmationClearsAfterInjectedTimeout() {
+        var now = Date(timeIntervalSince1970: 1_000)
+        let banner = TransientConfirmation(durationSeconds: 2.5, now: { now })
+        banner.showSaved(workflowName: "Browse cursor")
+        XCTAssertEqual(banner.message, "Saved 'Browse cursor'")
+        now = now.addingTimeInterval(2.4)
+        XCTAssertEqual(banner.refresh(), "Saved 'Browse cursor'")
+        now = now.addingTimeInterval(0.2)
+        XCTAssertNil(banner.refresh())
+    }
+
+    func testTargetDisplayNamePreferredOverBundleID() {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WaypointEditorNames-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let store = ConfigStore(baseDirectory: temp)
+        let vm = WorkflowEditorViewModel(store: store)
+        vm.addTarget(
+            bundleID: "com.todesktop.230313mzl4w4u92",
+            displayName: "Cursor",
+            classification: .editor
+        )
+        XCTAssertEqual(vm.displayName(forBundleID: "com.todesktop.230313mzl4w4u92"), "Cursor")
+    }
 }

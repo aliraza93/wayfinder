@@ -54,7 +54,13 @@ public final class OnboardingViewModel: @unchecked Sendable {
         case .unknown:
             return HonestCopy.permissionWhy
         case .denied:
-            return "Enable Waypoint in System Settings → Privacy & Security → Accessibility, then return here."
+            return """
+            Enable Waypoint in System Settings → Privacy & Security → Accessibility, then return here.
+
+            If the toggle is already ON but this app still says Denied, the grant is for an old build \
+            signature: select Waypoint in that list, click − to remove it, Quit Waypoint, Run again from \
+            Xcode, then enable the new Waypoint entry.
+            """
         case .granted:
             return "You’re ready to build and run read-only navigation workflows."
         }
@@ -207,15 +213,7 @@ public final class RunSessionViewModel: @unchecked Sendable {
 
     public static func label(for action: ActionKind?) -> String {
         guard let action else { return "—" }
-        switch action {
-        case .scroll(let d, _): return "scroll \(d)"
-        case .pageNavigate(let m): return "page \(m)"
-        case .wait(let s): return String(format: "wait %.1fs", s)
-        case .activateApp: return "activate"
-        case .switchWindow: return "switch window"
-        case .openExistingFile: return "open file"
-        case .returnToPrevious: return "return"
-        }
+        return ActionPaletteItem.humanTitle(for: action)
     }
 
     private func recomputeCanStart() {

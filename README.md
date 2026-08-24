@@ -21,6 +21,8 @@ Waypoint needs **Accessibility** (TCC). The grant is tied to the app’s **code 
 
 **Recommendation:** use a **stable local signing identity** (Apple Development or a shared Developer ID for local runs) so the bundle id + signing identity stay constant across rebuilds. After a signature change, toggle Waypoint off/on again under **System Settings → Privacy & Security → Accessibility**.
 
+**Why Accessibility asks again after every Xcode Run:** Debug builds that use **Sign to Run Locally** (ad-hoc, identity `-`) get a **new signature each rebuild**. macOS then treats the app as a different binary, so Settings can still show Waypoint ON while `AXIsProcessTrusted()` is false. Fix: in Xcode → target **Waypoint** → **Signing & Capabilities** → enable **Automatically manage signing** → pick your **Team** (Personal Team is fine). Grant Accessibility **once** for that signed build; it should stick across Runs.
+
 The menu bar exposes a small debug affordance: current grant state, **Request Accessibility…** (prompts at most once, then deep-links), and **Open Accessibility Settings**. Re-check runs when the app becomes active so enabling the toggle can flip to granted without relaunching.
 
 ## Development

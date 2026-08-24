@@ -41,8 +41,14 @@ public final class AccessibilityPermission: @unchecked Sendable {
     }
 
     /// Prompt at most once. On denial (or if already prompted), deep-link to Accessibility settings — never re-prompt.
+    /// If the process is already trusted, returns `.granted` without prompting or opening Settings.
     @discardableResult
     public func requestAccess() -> PermissionState {
+        if probe.isTrusted(prompt: false) {
+            state = .granted
+            return state
+        }
+
         if didPrompt {
             openSystemSettings()
             return refresh()

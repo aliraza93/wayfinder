@@ -63,4 +63,34 @@ public enum ActionPaletteItem: String, CaseIterable, Sendable, Identifiable {
         case .returnToPrevious: return .returnToPrevious
         }
     }
+
+    /// Same human titles as the palette — used for step rows in the editor.
+    public static func humanTitle(for action: ActionKind) -> String {
+        switch action {
+        case .scroll(let direction, _):
+            switch direction {
+            case .down: return ActionPaletteItem.scrollDown.title
+            case .up: return ActionPaletteItem.scrollUp.title
+            case .left, .right:
+                return "Scroll \(direction)"
+            }
+        case .pageNavigate(let mode):
+            switch mode {
+            case .pageDown: return ActionPaletteItem.pageDown.title
+            case .pageUp: return ActionPaletteItem.pageUp.title
+            case .home: return ActionPaletteItem.home.title
+            case .end: return ActionPaletteItem.end.title
+            }
+        case .wait:
+            return ActionPaletteItem.wait.title
+        case .activateApp:
+            return ActionPaletteItem.activateApp.title
+        case .returnToPrevious:
+            return ActionPaletteItem.returnToPrevious.title
+        case .switchWindow:
+            return "Switch window"
+        case .openExistingFile:
+            return "Open existing file"
+        }
+    }
 }

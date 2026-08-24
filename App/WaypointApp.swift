@@ -4,11 +4,24 @@ import SwiftUI
 
 @main
 struct WaypointApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var session = AppSession()
+
+    init() {
+        SingleInstance.claim()
+    }
 
     var body: some Scene {
         MenuBarExtra("Waypoint", systemImage: "location.north.line") {
             RootMenu(session: session)
+                .onAppear {
+                    appDelegate.onBecameActive = { [weak session] in
+                        Task { @MainActor in
+                            session?.refreshPermissions()
+                        }
+                    }
+                    session.refreshPermissions()
+                }
         }
 
         Window("Onboarding", id: "onboarding") {
@@ -58,6 +71,11 @@ struct UITestHostView: View {
                 openWindow(id: "editor")
             }
             .accessibilityIdentifier("uitest.openEditor")
+            if let banner = session.saveConfirmationMessage {
+                Text(banner)
+                    .foregroundStyle(.green)
+                    .accessibilityIdentifier("menu.saveConfirmation")
+            }
             Button(session.isRunning ? "Stop" : "Start") {
                 if session.isRunning { session.stop() } else { session.startSelected() }
             }

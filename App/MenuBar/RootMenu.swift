@@ -5,25 +5,50 @@ struct RootMenu: View {
     @ObservedObject var session: AppSession
     @Environment(\.openWindow) private var openWindow
 
+    private var isGranted: Bool {
+        session.accessibilityGranted
+    }
+
     var body: some View {
+        if let banner = session.saveConfirmationMessage {
+            Text(banner)
+                .foregroundStyle(.green)
+                .font(.callout)
+                .accessibilityIdentifier("menu.saveConfirmation")
+        }
+
         Text(session.permissionLabel)
             .accessibilityIdentifier("menu.permission")
         Text(session.liveStatusLine)
             .font(.caption)
             .accessibilityIdentifier("menu.liveStatus")
 
-        Button("Request Accessibility…") {
-            session.requestAccessibility()
+        if isGranted {
+            Text("Accessibility OK — no prompt needed")
+                .font(.caption2)
+        } else {
+            Text("Accessibility Denied — Start won’t run until Granted. Remove Waypoint (−) in Settings if toggle is stale, Run again, enable the new entry.")
+                .font(.caption2)
+                .lineLimit(4)
+            Button("Request Accessibility…") {
+                session.requestAccessibility()
+            }
+            .accessibilityIdentifier("menu.requestAccessibility")
         }
-        .accessibilityIdentifier("menu.requestAccessibility")
+
+        Button("Refresh Accessibility status") {
+            session.refreshPermissions()
+        }
         Button("Open Accessibility Settings") {
             session.openAccessibilitySettings()
         }
-        Button("Permission onboarding…") {
-            session.openOnboarding()
-            openWindow(id: "onboarding")
+        if !isGranted {
+            Button("Permission onboarding…") {
+                session.openOnboarding()
+                WindowPresenter.open(openWindow, id: "onboarding")
+            }
+            .accessibilityIdentifier("menu.onboarding")
         }
-        .accessibilityIdentifier("menu.onboarding")
 
         Divider()
 
@@ -38,6 +63,8 @@ struct RootMenu: View {
                     session.selectWorkflow(name)
                 }
             }
+            Text("▶ = selected. Then click Start (does not run on name tap).")
+                .font(.caption2)
         }
 
         Button(session.isRunning ? "Stop" : "Start") {
@@ -47,18 +74,19 @@ struct RootMenu: View {
                 session.startSelected()
             }
         }
-        .disabled(!session.canStart && !session.isRunning)
+        // Allow Start click even when Denied so we can show why it won’t run.
+        .disabled(session.isRunning ? false : session.selectedWorkflow == nil)
         .accessibilityIdentifier("menu.startStop")
 
         Divider()
         Button("Workflow Editor…") {
             session.openEditor()
-            openWindow(id: "editor")
+            WindowPresenter.open(openWindow, id: "editor")
         }
         .accessibilityIdentifier("menu.editor")
         Button("Run Timeline…") {
             session.openTimeline()
-            openWindow(id: "timeline")
+            WindowPresenter.open(openWindow, id: "timeline")
         }
         .accessibilityIdentifier("menu.timeline")
         Button("Refresh workflows") {
@@ -82,11 +110,10 @@ struct RootMenu: View {
             session.refreshPermissions()
             session.refreshWorkflowNames()
             if ProcessInfo.processInfo.arguments.contains("-uitesting") {
-                openWindow(id: "uitest-host")
-                openWindow(id: "onboarding")
-            } else if session.showOnboarding {
-                openWindow(id: "onboarding")
+                WindowPresenter.open(openWindow, id: "uitest-host")
+                WindowPresenter.open(openWindow, id: "onboarding")
             }
+            // Do not auto-pop onboarding on every menu open — only open when user asks.
         }
     }
 }

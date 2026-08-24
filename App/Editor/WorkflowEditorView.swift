@@ -4,36 +4,113 @@ import SwiftUI
 
 struct WorkflowEditorView: View {
     @ObservedObject var model: WorkflowEditorUIModel
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         HSplitView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Action palette")
-                    .font(.headline)
-                Text("Only inert navigation — no typing, paste, save, or chords.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                List(ActionPaletteItem.allCases) { item in
-                    Button(item.title) {
-                        model.addPaletteItem(item)
-                    }
-                    .accessibilityIdentifier("editor.palette.\(item.rawValue)")
-                }
+            paletteColumn
+                .frame(minWidth: 200, idealWidth: 220)
+
+            editorColumn
+                .frame(minWidth: 480)
+                .padding(16)
+        }
+        .frame(minWidth: 780, minHeight: 520)
+        .onAppear { model.refreshApps() }
+        .onChange(of: model.name) { _ in model.pushName() }
+        .onChange(of: model.loopEnabled) { _ in model.pushLoop() }
+        .onChange(of: model.maxIterations) { _ in model.pushLoop() }
+        .onChange(of: model.shouldDismiss) { should in
+            if should {
+                dismiss()
+                model.acknowledgeDismissed()
             }
-            .frame(minWidth: 180)
+        }
+    }
 
-            VStack(alignment: .leading, spacing: 12) {
-                TextField("Workflow name", text: $model.name)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("editor.name")
+    private var paletteColumn: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Action palette")
+                .font(.headline)
+            Text("Only inert navigation — no typing, paste, save, or chords.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-                Text("Targets")
-                    .font(.headline)
+            List(ActionPaletteItem.allCases) { item in
+                Button {
+                    model.addPaletteItem(item)
+                } label: {
+                    Label(item.title, systemImage: "plus.circle")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Add “\(item.title)” step")
+                .accessibilityIdentifier("editor.palette.\(item.rawValue)")
+            }
+        }
+        .padding(12)
+    }
+
+    private var editorColumn: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            TextField("Workflow name", text: $model.name)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("editor.name")
+
+            targetsCard
+            stepsCard
+
+            HStack(alignment: .center, spacing: 12) {
+                Toggle("Loop", isOn: $model.loopEnabled)
+                Stepper(
+                    "Max iterations: \(model.maxIterations)",
+                    value: $model.maxIterations,
+                    in: 1...50
+                )
+                .disabled(!model.loopEnabled)
+                .opacity(model.loopEnabled ? 1 : 0.45)
+                .help(model.loopEnabled ? "Maximum loop count" : "Enable Loop to set iterations")
+            }
+
+            if let error = model.errorMessage {
+                Text(error)
+                    .foregroundStyle(.red)
+                    .font(.callout)
+                    .accessibilityIdentifier("editor.error")
+            }
+
+            HStack {
+                Spacer()
+                Button("Validate") { model.validateOnly() }
+                    .accessibilityIdentifier("editor.validate")
+                Button("Save workflow") { model.save() }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("editor.save")
+                    .help("Save workflow (Return / ⌘S)")
+            }
+        }
+    }
+
+    private var targetsCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Targets")
+                        .font(.headline)
+                    Spacer()
+                    Button("Refresh apps") { model.refreshApps() }
+                        .accessibilityIdentifier("editor.refreshApps")
+                }
+
                 HStack {
                     Picker("App", selection: $model.selectedRunningIndex) {
                         Text("Select running app").tag(-1)
                         ForEach(Array(model.runningApps.enumerated()), id: \.offset) { index, app in
-                            Text("\(app.displayName) (\(app.bundleID))").tag(index)
+                            Text(app.displayName).tag(index)
+                                .help(app.bundleID)
                         }
                     }
                     Picker("Class", selection: $model.selectedClass) {
@@ -46,65 +123,86 @@ struct WorkflowEditorView: View {
                     Button("Add target") { model.addSelectedTarget() }
                         .accessibilityIdentifier("editor.addTarget")
                 }
-                List {
-                    ForEach(Array(model.targetLabels.enumerated()), id: \.offset) { index, label in
-                        HStack {
-                            Text(label)
-                            Spacer()
-                            Button("Remove") { model.removeTarget(at: index) }
+
+                if model.targets.isEmpty {
+                    Text("Add a running app as a target")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(model.targets.enumerated()), id: \.offset) { index, row in
+                            if index > 0 {
+                                Divider()
+                            }
+                            HStack(alignment: .firstTextBaseline) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(row.displayName) [\(row.classification)]")
+                                        .font(.body)
+                                    Text(row.bundleID)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .help(row.bundleID)
+                                }
+                                Spacer()
+                                Button("Remove") { model.removeTarget(at: index) }
+                            }
+                            .padding(.vertical, 8)
                         }
                     }
-                }
-                .frame(minHeight: 80)
-
-                Text("Steps")
-                    .font(.headline)
-                List {
-                    ForEach(Array(model.stepLabels.enumerated()), id: \.offset) { index, label in
-                        HStack {
-                            Text(label)
-                            Spacer()
-                            Button("↑") { model.moveUp(index) }
-                            Button("↓") { model.moveDown(index) }
-                            Button("Remove") { model.removeStep(at: index) }
-                        }
-                    }
-                }
-                .accessibilityIdentifier("editor.steps")
-
-                HStack {
-                    Toggle("Loop", isOn: $model.loopEnabled)
-                    Stepper("Max iterations: \(model.maxIterations)", value: $model.maxIterations, in: 1...100)
-                }
-
-                if let error = model.errorMessage {
-                    Text(error)
-                        .foregroundStyle(.red)
-                        .accessibilityIdentifier("editor.error")
-                }
-                if let ok = model.successMessage {
-                    Text(ok)
-                        .foregroundStyle(.green)
-                        .accessibilityIdentifier("editor.saved")
-                }
-
-                HStack {
-                    Button("Refresh apps") { model.refreshApps() }
-                    Spacer()
-                    Button("Validate") { model.validateOnly() }
-                        .accessibilityIdentifier("editor.validate")
-                    Button("Save workflow") { model.save() }
-                        .accessibilityIdentifier("editor.save")
                 }
             }
-            .padding()
+            .padding(4)
         }
-        .frame(minWidth: 720, minHeight: 480)
-        .onAppear { model.refreshApps() }
-        .onChange(of: model.name) { _ in model.pushName() }
-        .onChange(of: model.loopEnabled) { _ in model.pushLoop() }
-        .onChange(of: model.maxIterations) { _ in model.pushLoop() }
     }
+
+    private var stepsCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Steps")
+                    .font(.headline)
+
+                if model.steps.isEmpty {
+                    Text("Add navigation steps from the palette")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                        .accessibilityIdentifier("editor.stepsEmpty")
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(model.steps.enumerated()), id: \.offset) { index, title in
+                            if index > 0 {
+                                Divider()
+                            }
+                            HStack {
+                                Text("\(index + 1).")
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 28, alignment: .trailing)
+                                Text(title)
+                                Spacer()
+                                Button("↑") { model.moveUp(index) }
+                                    .disabled(index == 0)
+                                Button("↓") { model.moveDown(index) }
+                                    .disabled(index == model.steps.count - 1)
+                                Button("Remove") { model.removeStep(at: index) }
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+                    .accessibilityIdentifier("editor.steps")
+                }
+            }
+            .padding(4)
+        }
+    }
+}
+
+struct EditorTargetRow: Equatable {
+    var displayName: String
+    var bundleID: String
+    var classification: String
 }
 
 @MainActor
@@ -115,10 +213,13 @@ final class WorkflowEditorUIModel: ObservableObject {
     @Published var selectedRunningIndex = -1
     @Published var selectedClass: TargetAppClass = .generic
     @Published private(set) var runningApps: [(bundleID: String, displayName: String)] = []
-    @Published private(set) var targetLabels: [String] = []
-    @Published private(set) var stepLabels: [String] = []
+    @Published private(set) var targets: [EditorTargetRow] = []
+    @Published private(set) var steps: [String] = []
     @Published private(set) var errorMessage: String?
-    @Published private(set) var successMessage: String?
+    @Published private(set) var shouldDismiss = false
+
+    /// Called after a successful persist (parent shows transient confirmation).
+    var onSuccessfulSave: ((String) -> Void)?
 
     private let viewModel: WorkflowEditorViewModel
 
@@ -130,6 +231,7 @@ final class WorkflowEditorUIModel: ObservableObject {
     func refreshApps() {
         viewModel.refreshRunningApps()
         runningApps = viewModel.runningApps
+        syncFromVM()
     }
 
     func pushName() {
@@ -151,7 +253,7 @@ final class WorkflowEditorUIModel: ObservableObject {
         }
         viewModel.addStep(from: item, activateBundleID: bundle)
         syncFromVM()
-        clearMessages()
+        errorMessage = nil
     }
 
     func addSelectedTarget() {
@@ -159,7 +261,7 @@ final class WorkflowEditorUIModel: ObservableObject {
         let app = runningApps[selectedRunningIndex]
         viewModel.addTarget(bundleID: app.bundleID, displayName: app.displayName, classification: selectedClass)
         syncFromVM()
-        clearMessages()
+        errorMessage = nil
     }
 
     func removeTarget(at index: Int) {
@@ -179,6 +281,7 @@ final class WorkflowEditorUIModel: ObservableObject {
     }
 
     func moveDown(_ index: Int) {
+        guard index < viewModel.draft.steps.count - 1 else { return }
         viewModel.moveStep(from: index, to: index + 2)
         syncFromVM()
     }
@@ -189,25 +292,27 @@ final class WorkflowEditorUIModel: ObservableObject {
         switch viewModel.validateDraft() {
         case .success:
             errorMessage = nil
-            successMessage = "Valid — safe to save"
         case .failure(let error):
-            successMessage = nil
-            errorMessage = String(describing: error)
+            errorMessage = WorkflowEditorSaveFlow.describe(error)
         }
     }
 
+    /// Validates then persists. Invalid → keep open with red error. Valid → persist, dismiss, notify parent.
     func save() {
         pushName()
         pushLoop()
-        switch viewModel.save() {
-        case .success(let workflow):
-            errorMessage = nil
-            successMessage = "Saved “\(workflow.name)”"
+        var flow = WorkflowEditorSaveFlow()
+        flow.apply(result: viewModel.save())
+        errorMessage = flow.errorMessage
+        if let name = flow.confirmationName {
             syncFromVM()
-        case .failure(let error):
-            successMessage = nil
-            errorMessage = String(describing: error)
+            onSuccessfulSave?(name)
         }
+        shouldDismiss = flow.shouldDismiss
+    }
+
+    func acknowledgeDismissed() {
+        shouldDismiss = false
     }
 
     private func syncFromVM() {
@@ -215,16 +320,13 @@ final class WorkflowEditorUIModel: ObservableObject {
         loopEnabled = viewModel.draft.loopEnabled
         maxIterations = viewModel.draft.maxIterations
         runningApps = viewModel.runningApps
-        targetLabels = viewModel.draft.targets.map {
-            "\($0.bundleID) [\($0.classification)]"
+        targets = viewModel.draft.targets.map { target in
+            EditorTargetRow(
+                displayName: viewModel.displayName(forBundleID: target.bundleID),
+                bundleID: target.bundleID,
+                classification: String(describing: target.classification)
+            )
         }
-        stepLabels = viewModel.draft.steps.map { RunSessionViewModel.label(for: $0.action) }
-    }
-
-    private func clearMessages() {
-        errorMessage = nil
-        successMessage = nil
+        steps = viewModel.draft.steps.map { ActionPaletteItem.humanTitle(for: $0.action) }
     }
 }
-
-// TargetAppClass already Hashable via enum synthesis.

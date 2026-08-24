@@ -20,12 +20,14 @@ final class AppSession: ObservableObject {
     @Published var showTimeline = false
 
     @Published private(set) var permissionLabel = "Accessibility: Unknown"
+    @Published private(set) var accessibilityGranted = false
     @Published private(set) var liveStatusLine = "Idle"
     @Published private(set) var workflowNames: [String] = []
     @Published var selectedWorkflow: String?
     @Published private(set) var isRunning = false
     @Published private(set) var canStart = false
     @Published private(set) var lastMessage = ""
+    @Published private(set) var saveConfirmationMessage: String?
 
     let onboardingUI: OnboardingUIModel
     let editorUI: WorkflowEditorUIModel
@@ -36,15 +38,21 @@ final class AppSession: ObservableObject {
     private let onboardingVM: OnboardingViewModel
     private let runVM = RunSessionViewModel()
     private let timelineVM = TimelineViewModel()
+    private let saveConfirmation: TransientConfirmation
 
     private var runTask: Task<Void, Never>?
     private var monitor: UserSovereigntyMonitor?
     private var listenTap: SovereigntyListenTap?
     private var stopHotKey: GlobalStopHotKey?
     private var activeRecorder: RunRecorder?
+    private var saveBannerTask: Task<Void, Never>?
 
-    init(store: ConfigStore = ConfigStore()) {
+    init(
+        store: ConfigStore = ConfigStore(),
+        saveConfirmation: TransientConfirmation = TransientConfirmation()
+    ) {
         self.store = store
+        self.saveConfirmation = saveConfirmation
         let onboarding = OnboardingViewModel(
             refreshState: { [permission] in permission.refresh() },
             requestAccess: { [permission] in permission.requestAccess() },
@@ -62,10 +70,30 @@ final class AppSession: ObservableObject {
                 }
             }
         )
-        self.editorUI = WorkflowEditorUIModel(viewModel: editorVM)
+        let editor = WorkflowEditorUIModel(viewModel: editorVM)
+        self.editorUI = editor
         refreshPermissions()
         refreshWorkflowNames()
         showOnboarding = onboarding.showsOnboarding
+
+        editor.onSuccessfulSave = { [weak self] name in
+            self?.presentSaveConfirmation(name)
+        }
+    }
+
+    func presentSaveConfirmation(_ name: String) {
+        refreshWorkflowNames()
+        selectWorkflow(name)
+        saveConfirmation.showSaved(workflowName: name)
+        saveConfirmationMessage = saveConfirmation.message
+        lastMessage = saveConfirmation.message ?? ""
+        saveBannerTask?.cancel()
+        saveBannerTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled else { return }
+            self.saveConfirmation.clear()
+            self.saveConfirmationMessage = nil
+        }
     }
 
     func refreshPermissions() {
@@ -77,6 +105,7 @@ final class AppSession: ObservableObject {
         case .denied: permissionLabel = "Accessibility: Denied"
         case .granted: permissionLabel = "Accessibility: Granted"
         }
+        accessibilityGranted = (state == .granted)
         runVM.updateAccessibilityGranted(state == .granted)
         showOnboarding = state != .granted
         syncRunUI()
@@ -112,6 +141,11 @@ final class AppSession: ObservableObject {
         selectedWorkflow = name
         runVM.select(name)
         syncRunUI()
+        if accessibilityGranted {
+            lastMessage = "Selected “\(name)”. Click Start (bring Cursor frontmost first)."
+        } else {
+            lastMessage = "Selected “\(name)”. Grant Accessibility, then click Start."
+        }
     }
 
     func openEditor() {
@@ -128,8 +162,17 @@ final class AppSession: ObservableObject {
 
     func startSelected() {
         refreshPermissions()
-        guard runVM.canStart, let name = selectedWorkflow ?? runVM.selectedName else {
-            lastMessage = "Grant Accessibility and pick a workflow"
+        guard let name = selectedWorkflow ?? runVM.selectedName else {
+            lastMessage = "Pick a workflow in the menu first"
+            return
+        }
+        guard accessibilityGranted else {
+            lastMessage = "Accessibility Denied — enable Waypoint in System Settings, then Refresh Accessibility status"
+            openAccessibilitySettings()
+            return
+        }
+        guard runVM.canStart else {
+            lastMessage = "Cannot start — pick a workflow and grant Accessibility"
             return
         }
 
@@ -170,11 +213,22 @@ final class AppSession: ObservableObject {
         activeRecorder = recorder
         isRunning = true
         runVM.markRunning(workflowName: name, steps: workflow.steps)
+        let primaryBundleID = workflow.targets[0].bundleID
+        lastMessage = "Starting… bringing target frontmost"
         syncRunUI()
-        lastMessage = ""
 
         let started = Date()
-        runTask = Task.detached(priority: .userInitiated) { [weak self] in
+        let activator = AppActivator()
+        runTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            // Menu-bar Start leaves another app frontmost; FocusGuard refuses scroll until target is front.
+            let activated = activator.activate(bundleID: primaryBundleID)
+            if !activated {
+                self.finishFailure("Couldn’t activate \(primaryBundleID) — is it running?")
+                return
+            }
+            try? await Task.sleep(nanoseconds: 350_000_000)
+
             do {
                 let summary = try await runner.run(
                     workflowName: name,
@@ -184,22 +238,21 @@ final class AppSession: ObservableObject {
                     recorder: recorder,
                     resolver: resolver
                 )
-                await MainActor.run {
-                    self?.finishRun(events: summary.events, started: started)
-                }
+                self.finishRun(events: summary.events, started: started, targetBundleID: primaryBundleID)
             } catch {
-                await MainActor.run {
-                    self?.finishFailure(String(describing: error))
-                }
+                self.finishFailure(String(describing: error))
             }
         }
 
         // Poll recorder for live status / timeline while running (main-actor UI updates).
         Task { [weak self] in
-            while let self, self.isRunning {
+            while true {
+                guard let session = self else { return }
+                let stillRunning = await MainActor.run { session.isRunning }
+                guard stillRunning else { return }
                 try? await Task.sleep(nanoseconds: 200_000_000)
-                await MainActor.run {
-                    guard self.isRunning else { return }
+                await MainActor.run { [weak self] in
+                    guard let self, self.isRunning else { return }
                     let events = recorder.snapshot()
                     self.timelineVM.replace(with: events)
                     self.timelineUI.apply(self.timelineVM)
@@ -224,15 +277,21 @@ final class AppSession: ObservableObject {
         liveStatusLine = "Stopping…"
     }
 
-    private func finishRun(events: [RunEvent], started: Date) {
+    private func finishRun(events: [RunEvent], started: Date, targetBundleID: String) {
         teardownInput()
         timelineVM.replace(with: events)
         timelineUI.apply(timelineVM)
         let elapsed = Date().timeIntervalSince(started)
         runVM.markIdle(eventCount: events.count, elapsedSeconds: elapsed)
-        lastMessage = events
+        let summary = events
             .map { "\($0.actionKind):\($0.result.rawValue)" }
             .joined(separator: ", ")
+        if events.contains(where: { $0.result == .failed }) {
+            lastMessage =
+                "\(summary) — keep \(targetBundleID) frontmost while running (Start activates it first)"
+        } else {
+            lastMessage = summary
+        }
         syncRunUI()
         refreshWorkflowNames()
     }

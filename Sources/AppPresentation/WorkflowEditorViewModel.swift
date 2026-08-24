@@ -65,6 +65,8 @@ public final class WorkflowEditorViewModel: @unchecked Sendable {
     public private(set) var draft: WorkflowDraft
     public private(set) var lastError: String?
     public private(set) var runningApps: [(bundleID: String, displayName: String)]
+    /// Friendly names keyed by bundle ID (not persisted in config schema).
+    public private(set) var targetDisplayNames: [String: String] = [:]
 
     private let store: ConfigStore
     private let validator: WorkflowValidator
@@ -84,10 +86,16 @@ public final class WorkflowEditorViewModel: @unchecked Sendable {
         self.safety = safety
         self.listRunning = listRunning
         self.runningApps = listRunning()
+        for app in runningApps {
+            targetDisplayNames[app.bundleID] = app.displayName
+        }
     }
 
     public func refreshRunningApps() {
         runningApps = listRunning()
+        for app in runningApps {
+            targetDisplayNames[app.bundleID] = app.displayName
+        }
     }
 
     public func setName(_ name: String) {
@@ -101,11 +109,21 @@ public final class WorkflowEditorViewModel: @unchecked Sendable {
     }
 
     public func addTarget(bundleID: String, displayName: String, classification: TargetAppClass) {
-        _ = displayName
+        targetDisplayNames[bundleID] = displayName
         let target = TargetApp(bundleID: bundleID, classification: classification)
         if !draft.targets.contains(where: { $0.bundleID == bundleID }) {
             draft.targets.append(target)
         }
+    }
+
+    public func displayName(forBundleID bundleID: String) -> String {
+        if let name = targetDisplayNames[bundleID], !name.isEmpty {
+            return name
+        }
+        if let running = runningApps.first(where: { $0.bundleID == bundleID }) {
+            return running.displayName
+        }
+        return bundleID
     }
 
     public func removeTarget(at index: Int) {
