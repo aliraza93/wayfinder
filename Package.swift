@@ -111,6 +111,11 @@ let package = Package(
             path: "Tests/SafetyTests"
         ),
         .testTarget(
+            name: "ObservabilityTests",
+            dependencies: ["Observability"],
+            path: "Tests/ObservabilityTests"
+        ),
+        .testTarget(
             name: "EngineTests",
             dependencies: [
                 "CoreEngine",

@@ -192,3 +192,9 @@ Notes / observed results:
 
 - _(fill after live failure-injection runs)_
 - CI: `RecoveryTests` injects focus change, permission loss, Secure Input, restore failure, retry cap, timeout via simulation seam.
+
+---
+
+## Cross-app manual matrix
+
+See **[`docs/testing.md`](testing.md)** for the Chrome / VS Code / Finder × macOS matrix, merge-gate rules, and the provisioned (PPPC/MDM) integration path. Ordinary CI does not grant Accessibility TCC.

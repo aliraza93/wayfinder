@@ -32,9 +32,11 @@ swift test
 # App build
 xcodebuild -project Waypoint.xcodeproj -scheme Waypoint -destination 'platform=macOS' build
 
-# Full local CI
+# Full local CI (SafetyTests is an explicit merge gate; UITests/live AX are not)
 ./scripts/ci.sh
 ```
+
+Testing pyramid, manual matrix, and provisioned Accessibility runner: [`docs/testing.md`](docs/testing.md).
 
 Requires Xcode (full app, not only Command Line Tools) for `xcodebuild` and running the menu-bar app.
 

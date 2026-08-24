@@ -11,7 +11,8 @@ Everything here is planning + control documentation. The actual code repository 
 3. **`docs/03-implementation-roadmap.md`** — the work broken into 18 small milestones (M0–M17), each independently testable and buildable.
 4. **`docs/04-cursor-prompts.md`** — 18 copy/paste-ready prompts (CURSOR-01 → CURSOR-18), one per milestone.
 5. **`docs/05-execution-protocol.md`** — how to actually run the build: the per-milestone loop, the evidence to collect, the reusable Claude review prompt, and the final MVP-complete checklist.
-6. **`AGENTS.md`** (repo root) — binding rules Cursor loads automatically every session (read-only invariant, no-deception rule, safety gate, module boundaries). You don't need to paste these; Cursor reads them. They back-stop the prompts.
+6. **`docs/testing.md`** — test pyramid, SafetyTests merge gate, manual matrix, and provisioned GUI runner (TCC cannot be granted in ordinary CI).
+7. **`AGENTS.md`** (repo root) — binding rules Cursor loads automatically every session (read-only invariant, no-deception rule, safety gate, module boundaries). You don't need to paste these; Cursor reads them. They back-stop the prompts.
 
 ## Before you paste CURSOR-01
 

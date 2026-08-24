@@ -7,14 +7,23 @@ cd "$ROOT"
 echo "==> swift build (all package modules)"
 swift build
 
-echo "==> swift test (packages)"
+echo "==> Pure-logic + component package tests (merge CI)"
+# Includes Safety, Engine (state machine / simulation), Config, Domain, Observability redaction,
+# Adapters (incl. mutation-guard), AppTests. Does NOT run XCUITest.
 swift test
 
-echo "==> SafetyTests merge gate"
-swift test --filter SafetyTests
-# Explicit gate: a red SafetyTests suite must block merge even if other filters change later.
+echo "==> SafetyTests merge gate (explicit)"
+# A red SafetyTests suite must fail CI even if the broader `swift test` invocation changes.
+if ! swift test --filter SafetyTests; then
+  echo "ERROR: SafetyTests merge gate FAILED — do not merge." >&2
+  exit 1
+fi
+echo "SafetyTests merge gate OK"
 
-echo "==> xcodebuild build (app)"
+echo "==> Mutation-guard (editor read-only hash)"
+swift test --filter MutationGuardTests
+
+echo "==> xcodebuild build (app compile only — no live AX)"
 xcodebuild \
   -project Waypoint.xcodeproj \
   -scheme Waypoint \
@@ -22,4 +31,5 @@ xcodebuild \
   -configuration Debug \
   build
 
-echo "==> CI OK"
+echo "==> CI OK (pure logic + safety gate + app build; UITests/live AX not gated)"
+echo "See docs/testing.md for manual matrix and provisioned runner path."
