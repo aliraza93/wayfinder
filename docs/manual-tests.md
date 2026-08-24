@@ -135,3 +135,22 @@ Notes / observed results:
 
 - _(fill after live VS Code ± Vim run)_
 - CI: `EditorAdapterTests` + `MutationGuardTests` (scratch SHA-256 before/after inert loop, with and without vim-keymap-assumed).
+
+---
+
+## Workflow configuration surface (WorkflowRunner)
+
+Prerequisites: Accessibility granted; Chrome / VS Code / Finder as needed by the workflow targets; `workflows.json` seeded (menu **Seed Sample Workflows**).
+
+Checklist:
+
+1. [ ] **Seed Sample Workflows** writes `~/Library/Application Support/Waypoint/workflows.json` with `multi-target-scroll`.
+2. [ ] Select workflow → **Run Selected Workflow** — validates, resolves running targets, selects browser/editor/generic adapters, runs via RealExecutor; content-free log summary appears.
+3. [ ] If a configured target is not running, run refuses with a clear error and executes nothing.
+4. [ ] Illegal / safety-denied workflows never start (CI covers this).
+5. [ ] Loop caps and per-step on-error from JSON are honored.
+
+Notes / observed results:
+
+- _(fill after live multi-app run)_
+- CI: `RunnerTests` (simulation seam) + `ResolutionTests` (target class → adapter).

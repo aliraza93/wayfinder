@@ -39,7 +39,7 @@ let package = Package(
         ),
         .target(
             name: "CoreEngine",
-            dependencies: ["Domain", "Safety", "Observability"],
+            dependencies: ["Domain", "Safety", "Observability", "Config", "Adapters"],
             path: "Sources/CoreEngine"
         ),
         .target(
@@ -107,6 +107,8 @@ let package = Package(
                 "Observability",
                 "InputSynthesis",
                 "WaypointAccessibility",
+                "Config",
+                "Adapters",
             ],
             path: "Tests/EngineTests"
         ),

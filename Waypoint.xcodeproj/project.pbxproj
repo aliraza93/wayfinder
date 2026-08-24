@@ -10,6 +10,7 @@
 		AA0000000000000000000001 /* WaypointApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000010 /* WaypointApp.swift */; };
 		AA0000000000000000000002 /* RootMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000011 /* RootMenu.swift */; };
 		AA000000000000000000000F /* SkeletonControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000013 /* SkeletonControls.swift */; };
+		AA0000000000000000000015 /* WorkflowControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000014 /* WorkflowControls.swift */; };
 		AA0000000000000000000003 /* Domain in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000030 /* Domain */; };
 		AA0000000000000000000004 /* Config in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000031 /* Config */; };
 		AA0000000000000000000005 /* Safety in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000032 /* Safety */; };
@@ -28,6 +29,7 @@
 		AA0000000000000000000010 /* WaypointApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaypointApp.swift; sourceTree = "<group>"; };
 		AA0000000000000000000011 /* RootMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootMenu.swift; sourceTree = "<group>"; };
 		AA0000000000000000000013 /* SkeletonControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkeletonControls.swift; sourceTree = "<group>"; };
+		AA0000000000000000000014 /* WorkflowControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowControls.swift; sourceTree = "<group>"; };
 		AA0000000000000000000012 /* Waypoint.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Waypoint.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -76,6 +78,7 @@
 			children = (
 				AA0000000000000000000011 /* RootMenu.swift */,
 				AA0000000000000000000013 /* SkeletonControls.swift */,
+				AA0000000000000000000014 /* WorkflowControls.swift */,
 			);
 			path = MenuBar;
 			sourceTree = "<group>";
@@ -160,6 +163,7 @@
 				AA0000000000000000000001 /* WaypointApp.swift in Sources */,
 				AA0000000000000000000002 /* RootMenu.swift in Sources */,
 				AA000000000000000000000F /* SkeletonControls.swift in Sources */,
+				AA0000000000000000000015 /* WorkflowControls.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
