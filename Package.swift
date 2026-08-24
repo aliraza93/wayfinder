@@ -23,7 +23,11 @@ let package = Package(
     targets: [
         // Pure-logic modules — must not import AppKit / ApplicationServices.
         .target(name: "Domain", path: "Sources/Domain"),
-        .target(name: "Config", path: "Sources/Config"),
+        .target(
+            name: "Config",
+            dependencies: ["Domain"],
+            path: "Sources/Config"
+        ),
         .target(name: "Safety", path: "Sources/Safety"),
         .target(name: "CoreEngine", path: "Sources/CoreEngine"),
         .target(name: "Timing", path: "Sources/Timing"),
@@ -41,6 +45,11 @@ let package = Package(
             name: "DomainTests",
             dependencies: ["Domain"],
             path: "Tests/DomainTests"
+        ),
+        .testTarget(
+            name: "ConfigTests",
+            dependencies: ["Config", "Domain"],
+            path: "Tests/ConfigTests"
         ),
     ]
 )
