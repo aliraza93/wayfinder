@@ -37,3 +37,25 @@ Notes / observed results:
 
 - _(fill after live Waypoint.app run)_
 - Unit `StateTests` cover prompt-once, deep-link on denial, and foreground re-check → granted with an injected probe.
+
+---
+
+## Coarse AX + focus guard (Accessibility)
+
+Prerequisites: Accessibility permission **granted** for Waypoint. Chrome / editor / Finder available.
+
+Checklist:
+
+1. [ ] `CoarseAX().frontmostAppBundleID()` matches the app you have frontmost (Chrome / VS Code / Finder / etc.).
+2. [ ] `focusedWindowExists()` is `true` when that app has a focused window.
+3. [ ] `focusedElementBundleID()` matches the frontmost/focused app bundle id (identity only — no titles/text).
+4. [ ] `FocusGuard.assert(target:)` for the frontmost app returns `.ok` after the debounce.
+5. [ ] Switch to another app mid-check (or assert against a non-frontmost target) → `.changed`.
+6. [ ] Confirm logs/APIs never capture window titles or document content (only bundle ids / bools).
+
+Notes / observed results:
+
+- Live peek without Waypoint AX grant (`AXIsProcessTrusted() == false`): frontmost bundle id via `NSWorkspace` was `com.apple.systempreferences`; `focusedWindowExists` via AX returned false (untrusted). Re-run checklist after enabling Waypoint in Accessibility Settings.
+- Confirmed: APIs only expose bundle ids / bools — **no document content read**.
+- `FocusGuardTests` cover stable → ok, other app → changed, missing → lost, mid-debounce change → changed.
+- Swift module product is named `WaypointAccessibility` (sources remain under `Sources/Accessibility/`) because a module named `Accessibility` circularly conflicts with Apple’s Accessibility.framework through AppKit.

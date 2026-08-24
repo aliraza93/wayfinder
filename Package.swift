@@ -13,7 +13,7 @@ let package = Package(
         .library(name: "CoreEngine", targets: ["CoreEngine"]),
         .library(name: "Actions", targets: ["Actions"]),
         .library(name: "Observability", targets: ["Observability"]),
-        .library(name: "Accessibility", targets: ["Accessibility"]),
+        .library(name: "WaypointAccessibility", targets: ["WaypointAccessibility"]),
         .library(name: "InputSynthesis", targets: ["InputSynthesis"]),
         .library(name: "AppControl", targets: ["AppControl"]),
         .library(name: "Permissions", targets: ["Permissions"]),
@@ -50,7 +50,12 @@ let package = Package(
             dependencies: ["Domain", "CoreEngine"],
             path: "Sources/Actions"
         ),
-        .target(name: "Accessibility", path: "Sources/Accessibility"),
+        // Named WaypointAccessibility — "Accessibility" clashes with Apple's Accessibility.framework via AppKit.
+        .target(
+            name: "WaypointAccessibility",
+            dependencies: ["Domain", "CoreEngine"],
+            path: "Sources/Accessibility"
+        ),
         .target(name: "InputSynthesis", path: "Sources/InputSynthesis"),
         .target(
             name: "AppControl",
@@ -92,6 +97,11 @@ let package = Package(
             name: "PermissionsTests",
             dependencies: ["Permissions"],
             path: "Tests/PermissionsTests"
+        ),
+        .testTarget(
+            name: "AccessibilityTests",
+            dependencies: ["WaypointAccessibility", "Domain", "CoreEngine"],
+            path: "Tests/AccessibilityTests"
         ),
     ]
 )

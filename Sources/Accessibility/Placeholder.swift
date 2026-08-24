@@ -1,4 +1,5 @@
-/// Placeholder for the Accessibility module. Filled in by later milestones.
+/// Placeholder for the WaypointAccessibility module (Sources/Accessibility).
+/// Named WaypointAccessibility to avoid clashing with Apple's Accessibility.framework.
 public enum AccessibilityModule {
-    public static let name = "Accessibility"
+    public static let name = "WaypointAccessibility"
 }

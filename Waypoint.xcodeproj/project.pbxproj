@@ -15,7 +15,7 @@
 		AA0000000000000000000006 /* CoreEngine in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000033 /* CoreEngine */; };
 		AA0000000000000000000007 /* Actions in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000034 /* Actions */; };
 		AA0000000000000000000008 /* Observability in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000035 /* Observability */; };
-		AA0000000000000000000009 /* Accessibility in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000036 /* Accessibility */; };
+		AA0000000000000000000009 /* WaypointAccessibility in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000036 /* WaypointAccessibility */; };
 		AA000000000000000000000A /* InputSynthesis in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000037 /* InputSynthesis */; };
 		AA000000000000000000000B /* AppControl in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000038 /* AppControl */; };
 		AA000000000000000000000C /* Permissions in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000039 /* Permissions */; };
@@ -40,7 +40,7 @@
 				AA0000000000000000000006 /* CoreEngine in Frameworks */,
 				AA0000000000000000000007 /* Actions in Frameworks */,
 				AA0000000000000000000008 /* Observability in Frameworks */,
-				AA0000000000000000000009 /* Accessibility in Frameworks */,
+				AA0000000000000000000009 /* WaypointAccessibility in Frameworks */,
 				AA000000000000000000000A /* InputSynthesis in Frameworks */,
 				AA000000000000000000000B /* AppControl in Frameworks */,
 				AA000000000000000000000C /* Permissions in Frameworks */,
@@ -107,7 +107,7 @@
 				AA0000000000000000000033 /* CoreEngine */,
 				AA0000000000000000000034 /* Actions */,
 				AA0000000000000000000035 /* Observability */,
-				AA0000000000000000000036 /* Accessibility */,
+				AA0000000000000000000036 /* WaypointAccessibility */,
 				AA0000000000000000000037 /* InputSynthesis */,
 				AA0000000000000000000038 /* AppControl */,
 				AA0000000000000000000039 /* Permissions */,
@@ -312,10 +312,10 @@
 			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
 			productName = Observability;
 		};
-		AA0000000000000000000036 /* Accessibility */ = {
+		AA0000000000000000000036 /* WaypointAccessibility */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AA000000000000000000003C /* XCLocalSwiftPackageReference "." */;
-			productName = Accessibility;
+			productName = WaypointAccessibility;
 		};
 		AA0000000000000000000037 /* InputSynthesis */ = {
 			isa = XCSwiftPackageProductDependency;
