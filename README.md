@@ -13,7 +13,15 @@ Waypoint is a macOS menu-bar app that runs user-defined, **strictly read-only** 
 
 ## Status
 
-Project foundation (CURSOR-01): buildable menu-bar shell, empty Swift package modules, and CI for package tests + app build. Real workflow functionality comes in later milestones.
+Buildable menu-bar app with Domain/Config/Safety/engine packages, app detection, and Accessibility permission handling. Further interaction milestones follow.
+
+## Accessibility permission (dev note)
+
+Waypoint needs **Accessibility** (TCC). The grant is tied to the app’s **code signature**. Ad-hoc / constantly re-signed **dev builds often lose the grant on rebuild**, so System Settings may show a stale or missing entry after each build.
+
+**Recommendation:** use a **stable local signing identity** (Apple Development or a shared Developer ID for local runs) so the bundle id + signing identity stay constant across rebuilds. After a signature change, toggle Waypoint off/on again under **System Settings → Privacy & Security → Accessibility**.
+
+The menu bar exposes a small debug affordance: current grant state, **Request Accessibility…** (prompts at most once, then deep-links), and **Open Accessibility Settings**. Re-check runs when the app becomes active so enabling the toggle can flip to granted without relaunching.
 
 ## Development
 

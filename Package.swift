@@ -57,7 +57,10 @@ let package = Package(
             dependencies: ["Domain"],
             path: "Sources/AppControl"
         ),
-        .target(name: "Permissions", path: "Sources/Permissions"),
+        .target(
+            name: "Permissions",
+            path: "Sources/Permissions"
+        ),
         .target(name: "Adapters", path: "Sources/Adapters"),
 
         .testTarget(
@@ -84,6 +87,11 @@ let package = Package(
             name: "AppControlTests",
             dependencies: ["AppControl", "Domain"],
             path: "Tests/AppControlTests"
+        ),
+        .testTarget(
+            name: "PermissionsTests",
+            dependencies: ["Permissions"],
+            path: "Tests/PermissionsTests"
         ),
     ]
 )
