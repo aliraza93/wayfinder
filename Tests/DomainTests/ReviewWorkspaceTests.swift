@@ -350,10 +350,75 @@ final class ReviewWorkspaceTests: XCTestCase {
         var settings = ReviewWorkspaceSettings(dwellMinSeconds: 20, dwellMaxSeconds: 80)
         settings.normalize()
         let file = settings.randomFileDwellSeconds()
-        XCTAssertGreaterThanOrEqual(file, 4)
+        XCTAssertGreaterThanOrEqual(file, 3)
         XCTAssertLessThanOrEqual(file, 80)
         let pause = settings.randomInterFilePauseSeconds()
         XCTAssertGreaterThanOrEqual(pause, 0.4)
         XCTAssertLessThanOrEqual(pause, 2.2)
+    }
+
+    func testSmartAppDwellCapsWhenMultipleApps() {
+        var settings = ReviewWorkspaceSettings(dwellMinSeconds: 5, dwellMaxSeconds: 20)
+        settings.normalize()
+        for _ in 0..<40 {
+            let multi = settings.smartAppDwellSeconds(distinctAppCount: 2)
+            XCTAssertGreaterThanOrEqual(multi, 5)
+            XCTAssertLessThanOrEqual(multi, 9.25, "multi-app dwell should stay short so Chrome gets turns")
+            let single = settings.smartAppDwellSeconds(distinctAppCount: 1)
+            XCTAssertLessThanOrEqual(single, 20)
+        }
+    }
+
+    func testMultiTargetRotatesToBrowserAfterSurfaceSwitches() {
+        var settings = ReviewWorkspaceSettings(
+            dwellMinSeconds: 60,
+            dwellMaxSeconds: 120,
+            speed: .fast,
+            loopTargets: true,
+            discoverRunningApps: false,
+            refreshTargetsBetweenDwells: false
+        )
+        settings.normalize()
+        var controller = ReviewSessionController(
+            settings: settings,
+            queue: [
+                .discoveredApp(
+                    bundleID: "com.todesktop.x",
+                    displayName: "Cursor",
+                    classification: .editor
+                ),
+                .discoveredApp(
+                    bundleID: "com.google.Chrome",
+                    displayName: "Chrome",
+                    classification: .browser
+                ),
+            ],
+            editorBundleID: "com.todesktop.x",
+            browserBundleID: "com.google.Chrome"
+        )
+        let t0 = Date()
+        // Focus Cursor
+        let focus = controller.nextPick(now: t0)
+        XCTAssertEqual(focus?.metaKind, "applicationFocused")
+        if case .activateApp(let id) = focus?.action {
+            XCTAssertEqual(id, "com.todesktop.x")
+        } else {
+            XCTFail("expected Cursor activate")
+        }
+        // Select surface
+        _ = controller.nextPick(now: t0)
+
+        var sawChrome = false
+        var now = t0
+        // Expire file dwell repeatedly until rotation forces Chrome (app dwell is long).
+        for _ in 0..<8 {
+            now = now.addingTimeInterval(90)
+            guard let pick = controller.nextPick(now: now) else { break }
+            if case .activateApp(let id) = pick.action, id == "com.google.Chrome" {
+                sawChrome = true
+                break
+            }
+        }
+        XCTAssertTrue(sawChrome, "must activate Chrome after Cursor surface hops")
     }
 }

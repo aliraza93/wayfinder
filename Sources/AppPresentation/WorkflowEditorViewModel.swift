@@ -71,7 +71,7 @@ public struct WorkflowDraft: Equatable, Sendable {
                 maxIterations: max(1, maxIterations),
                 maxDurationSeconds: maxDurationSeconds,
                 untilStopped: untilStopped,
-                shuffleSteps: shuffleSteps
+                shuffleSteps: (maxDurationSeconds != nil || untilStopped) ? true : shuffleSteps
             ),
             reviewFilePaths: reviewCopy.filePaths,
             review: reviewCopy

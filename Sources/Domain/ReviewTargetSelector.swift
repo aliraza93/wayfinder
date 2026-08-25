@@ -104,6 +104,10 @@ public struct ReviewSessionController: Sendable {
     private var consecutiveDown: Int
     /// Per-file/tab reading window (adaptive length).
     private var surfaceSession: AdaptiveSurfaceSession?
+    /// File/tab switches on the current app before forcing the next Target.
+    private var surfaceSwitchesOnApp: Int
+    /// After this many surface switches, leave for another app (when ≥2 apps in queue).
+    private var maxSurfaceSwitchesBeforeAppChange: Int
 
     public init(
         settings: ReviewWorkspaceSettings,
@@ -130,6 +134,8 @@ public struct ReviewSessionController: Sendable {
         self.atBoundary = false
         self.consecutiveDown = 0
         self.surfaceSession = nil
+        self.surfaceSwitchesOnApp = 0
+        self.maxSurfaceSwitchesBeforeAppChange = Self.plannedSurfaceSwitches(for: queue)
     }
 
     public var dwellAllocatedSeconds: Double? {
@@ -197,8 +203,12 @@ public struct ReviewSessionController: Sendable {
 
         crawlStepsOnTarget += 1
 
-        // Per-file dwell expired → open another file/tab (random pause), stay on same app.
+        // Per-file dwell expired → another file/tab, or rotate to the next Target app.
         if let session = surfaceSession, session.isExpired(at: now) {
+            surfaceSwitchesOnApp += 1
+            if shouldRotateToAlternateApp() {
+                return completeTargetEarly(now: now, reasonAction: .wait(seconds: 0.05))
+            }
             return switchSurfaceWithinApp(now: now)
         }
 
@@ -207,6 +217,10 @@ public struct ReviewSessionController: Sendable {
             return completeTargetEarly(now: now, reasonAction: tick.action)
         }
         if isSurfaceSwitch(tick.action) {
+            surfaceSwitchesOnApp += 1
+            if shouldRotateToAlternateApp() {
+                return completeTargetEarly(now: now, reasonAction: tick.action)
+            }
             beginSurfaceSession(now: now)
             return TimedReviewPick(
                 action: tick.action,
@@ -262,7 +276,9 @@ public struct ReviewSessionController: Sendable {
         atBoundary = false
         consecutiveDown = 0
         surfaceSession = nil
-        let dwell = settings.randomDwellSeconds()
+        surfaceSwitchesOnApp = 0
+        maxSurfaceSwitchesBeforeAppChange = Self.plannedSurfaceSwitches(for: queue)
+        let dwell = settings.smartAppDwellSeconds(distinctAppCount: distinctAppCount())
         dwellStartedAt = now
         dwellEndsAt = now.addingTimeInterval(dwell)
         let upcoming = (safe + 1) % queue.count
@@ -302,7 +318,9 @@ public struct ReviewSessionController: Sendable {
         index = nextIdx
         current = queue[nextIdx]
         enterPhase = .focusApp
-        let dwell = settings.randomDwellSeconds()
+        surfaceSwitchesOnApp = 0
+        maxSurfaceSwitchesBeforeAppChange = Self.plannedSurfaceSwitches(for: queue)
+        let dwell = settings.smartAppDwellSeconds(distinctAppCount: distinctAppCount())
         dwellStartedAt = now
         dwellEndsAt = now.addingTimeInterval(dwell)
         let upcoming = (nextIdx + 1) % queue.count
@@ -511,8 +529,39 @@ public struct ReviewSessionController: Sendable {
         consecutiveDown = 0
         surfaceSession = AdaptiveSurfaceSession(
             now: now,
-            durationSeconds: settings.randomFileDwellSeconds()
+            durationSeconds: settings.randomFileDwellSeconds(distinctAppCount: distinctAppCount())
         )
+    }
+
+    private func shouldRotateToAlternateApp() -> Bool {
+        distinctAppCount() >= 2
+            && surfaceSwitchesOnApp >= maxSurfaceSwitchesBeforeAppChange
+            && preferredAlternateIndex(after: index) != nil
+    }
+
+    private func distinctAppCount() -> Int {
+        Set(queue.map { Self.appClassKey(of: $0) }).count
+    }
+
+    private static func plannedSurfaceSwitches(for queue: [ReviewTarget]) -> Int {
+        let apps = Set(queue.map { appClassKey(of: $0) }).count
+        guard apps >= 2 else { return Int.max }
+        // 1–2 file/tab hops, then force the next Target (e.g. Chrome).
+        return Int.random(in: 1...2)
+    }
+
+    private static func appClassKey(of target: ReviewTarget) -> String {
+        switch target {
+        case .editorFile: return "editor"
+        case .chromeTab: return "browser"
+        case .discoveredApp(let bundleID, _, let classification):
+            switch classification {
+            case .editor: return "editor:\(bundleID)"
+            case .browser: return "browser:\(bundleID)"
+            case .finder: return "finder:\(bundleID)"
+            case .generic: return "generic:\(bundleID)"
+            }
+        }
     }
 
     private mutating func switchSurfaceWithinApp(now: Date) -> TimedReviewPick {

@@ -289,10 +289,33 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
         Double.random(in: dwellMinSeconds...dwellMaxSeconds)
     }
 
+    /// Smart per-app dwell: mid-biased random. With multiple apps, caps length so
+    /// Chrome/others get turns instead of one editor monopolizing the session.
+    public func smartAppDwellSeconds(distinctAppCount: Int = 1) -> Double {
+        let lo = dwellMinSeconds
+        var hi = dwellMaxSeconds
+        if distinctAppCount >= 2 {
+            // Prefer a few shorter hops across apps over one long stay.
+            hi = min(dwellMaxSeconds, max(dwellMinSeconds + 2, dwellMinSeconds * 1.85))
+        }
+        if lo >= hi { return lo }
+        let mid = (lo + hi) / 2
+        let half = (hi - lo) / 2
+        let biasedLo = max(lo, mid - half * 0.55)
+        let biasedHi = min(hi, mid + half * 0.55)
+        if biasedLo >= biasedHi { return Double.random(in: lo...hi) }
+        return Double.random(in: biasedLo...biasedHi)
+    }
+
     /// Random reading time for one file/tab inside an app dwell (shorter than full target dwell).
-    public func randomFileDwellSeconds() -> Double {
-        let fileMin = max(4.0, dwellMinSeconds * 0.35)
-        let fileMax = max(fileMin + 2.0, min(dwellMaxSeconds, dwellMaxSeconds * 0.7))
+    public func randomFileDwellSeconds(distinctAppCount: Int = 1) -> Double {
+        let multi = distinctAppCount >= 2
+        let fileMin = max(3.0, dwellMinSeconds * (multi ? 0.25 : 0.35))
+        var fileMax = max(fileMin + 1.5, min(dwellMaxSeconds, dwellMaxSeconds * (multi ? 0.45 : 0.7)))
+        if multi {
+            fileMax = min(fileMax, max(fileMin + 1.5, dwellMinSeconds * 0.95))
+        }
+        if fileMin >= fileMax { return fileMin }
         return Double.random(in: fileMin...fileMax)
     }
 

@@ -144,13 +144,13 @@ public actor WorkflowEngine {
             }
 
             let stepsThisRound: [Step]
-            let continuousRandom =
-                workflow.loop.shuffleSteps
-                && (workflow.loop.maxDurationSeconds != nil || workflow.loop.untilStopped)
+            // Timed / until-stopped runs always use the universal multi-target session.
+            // Do not gate on shuffleSteps — older saves omitted it (defaulted false) and
+            // never left Cursor for Chrome.
+            let useUniversalSession =
+                workflow.loop.maxDurationSeconds != nil || workflow.loop.untilStopped
 
-            if continuousRandom {
-                // Pick a random step each tick until duration / stop — more variety than
-                // shuffling a fixed list once per loop.
+            if useUniversalSession {
                 stepsThisRound = [] // unused; handled below
             } else if workflow.loop.shuffleSteps, workflow.steps.count > 1 {
                 stepsThisRound = workflow.steps.shuffled()
@@ -158,7 +158,7 @@ public actor WorkflowEngine {
                 stepsThisRound = workflow.steps
             }
 
-            if continuousRandom {
+            if useUniversalSession {
                 var reviewSettings = workflow.review
                 if reviewSettings.filePaths.isEmpty, !workflow.reviewFilePaths.isEmpty {
                     reviewSettings.filePaths = workflow.reviewFilePaths
@@ -392,11 +392,11 @@ public actor WorkflowEngine {
                     continue
                 }
             }
-            } // end sequential / continuousRandom
+            } // end sequential / universal session
 
             iterationsCompleted = iteration
 
-            if continuousRandom || !shouldContinueLooping {
+            if useUniversalSession || !shouldContinueLooping {
                 break
             }
         }
