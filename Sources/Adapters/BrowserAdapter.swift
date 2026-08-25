@@ -127,9 +127,10 @@ public struct BrowserAdapter: Sendable {
             }
             guard InertKeyAllowlist.contains(key) else { return nil }
             return .inertKey(keyCode: key)
-        case .switchTab, .highlightNavigate, .contentClick, .explorerFileSwitch:
+        case .switchTab, .highlightNavigate, .contentClick, .explorerFileSwitch,
+             .activateWebNavTarget, .browserBack:
             return nil
-        case .wait, .activateApp, .switchWindow, .openExistingFile, .returnToPrevious:
+        case .wait, .activateApp, .switchWindow, .openExistingFile, .returnToPrevious, .inspectWebPage:
             return nil
         }
     }
@@ -167,6 +168,9 @@ public struct BrowserAdapter: Sendable {
 
         case .contentClick:
             return .contentClick
+
+        case .activateWebNavTarget, .browserBack, .inspectWebPage:
+            return action
 
         case .explorerFileSwitch:
             // Explorer is an editor concern; browsers use tab switch instead.

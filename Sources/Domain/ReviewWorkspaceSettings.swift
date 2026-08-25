@@ -220,6 +220,8 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
     public var discovery: DiscoveryScope
     /// Re-scan running apps between targets during long sessions.
     public var refreshTargetsBetweenDwells: Bool
+    /// Smart Chrome / browser web navigation (docs, GitHub, domain policy).
+    public var chrome: ChromeNavigationSettings
 
     public init(
         workspacePath: String = "",
@@ -233,7 +235,8 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
         loopTargets: Bool = true,
         discoverRunningApps: Bool = false,
         discovery: DiscoveryScope = .default,
-        refreshTargetsBetweenDwells: Bool = false
+        refreshTargetsBetweenDwells: Bool = false,
+        chrome: ChromeNavigationSettings = .default
     ) {
         self.workspacePath = workspacePath
         self.filePaths = filePaths
@@ -247,6 +250,7 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
         self.discoverRunningApps = discoverRunningApps
         self.discovery = discovery
         self.refreshTargetsBetweenDwells = refreshTargetsBetweenDwells
+        self.chrome = chrome
     }
 
     public static let `default` = ReviewWorkspaceSettings()
@@ -265,6 +269,7 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         workspacePath = workspacePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        chrome.normalize()
     }
 
     public func validated() -> (ok: Bool, message: String?) {

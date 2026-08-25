@@ -99,6 +99,25 @@ public actor RealExecutor: ActionExecutor {
             }
             try await synth.emitDoubleClick(primitive, action: action, target: target)
 
+        case .activateWebNavTarget(_, let x, let y):
+            guard let primitive = ClickPrimitive.make(x: CGFloat(x), y: CGFloat(y)) else {
+                throw ActionError("invalid web nav click point")
+            }
+            // Single click follows links; double-click is for editor highlight only.
+            try await synth.emitClick(primitive, action: action, target: target)
+            try await Task.sleep(nanoseconds: 350_000_000)
+
+        case .browserBack:
+            guard let primitive = NavigationChordPrimitive.browserBack() else {
+                throw ActionError("browser back chord not allowlisted")
+            }
+            try await synth.emitNavigationChord(primitive, action: action, target: target)
+            try await Task.sleep(nanoseconds: 400_000_000)
+
+        case .inspectWebPage:
+            // Engine refreshes the snapshot via WebPageInspectionSource; no input.
+            return
+
         case .explorerFileSwitch(let direction):
             // Open another project file from the LEFT SIDEBAR only.
             // NEVER press Return — if focus is still in the editor, Return mutates source.

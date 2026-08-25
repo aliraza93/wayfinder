@@ -8,26 +8,28 @@ public enum HonestCopy {
     public static let does = """
     Universal Workspace Navigation crawls only the apps you add as Targets (e.g. Cursor + Chrome). \
     Optionally it can also include open Finder/Preview/other apps you enable — never System Settings. \
-    Focus → select surface → crawl for a dwell → next, until the session ends.
+    Focus → select surface → crawl for a dwell → next, until the session ends. Chrome can inspect \
+    accessible page structure and follow safe same-domain links for docs and repositories.
     """
 
     public static let neverDoes = """
     It never types into your files, presses Return/Delete to edit, pastes, saves, formats, \
     refactors, or runs destructive editor commands. Opening another explorer file uses a \
-    sidebar click only — never Return in the editor. It does not fabricate activity or capture \
-    document body content.
+    sidebar click only — never Return in the editor. Chrome never submits forms, logs out, \
+    purchases, or mutates GitHub. It does not fabricate activity or capture document body content.
     """
 
     public static let permissionWhy = """
     Accessibility permission lets Waypoint verify the frontmost app and perform read-only \
-    navigation (scroll, page/arrow keys, allowlisted tab/explorer navigation, content clicks) — \
-    nothing that rewrites your source.
+    navigation (scroll, page/arrow keys, allowlisted tab/explorer navigation, content clicks, \
+    and best-effort page structure for safe link clicks) — nothing that rewrites your source.
     """
 
     public static let tabFileLimits = """
     Configure workspace files and Chrome tab labels when you want fixed queues; otherwise Targets \
-    drive Cursor↔Chrome. Per-file reading time adapts: short content switches sooner, longer \
-    skims stay longer, with a random pause between file/tab changes.
+    drive Cursor↔Chrome. Chrome profiles control docs/GitHub crawl depth and allowed domains. \
+    Per-file reading time adapts: short content switches sooner, longer skims stay longer, with \
+    a random pause between file/tab changes.
     """
 }
 
@@ -172,6 +174,13 @@ public enum ActionPaletteItem: String, CaseIterable, Sendable, Identifiable {
         case .openExistingFile(let path):
             let name = (path as NSString).lastPathComponent
             return name.isEmpty ? ActionPaletteItem.openExistingFile.title : "Open \(name)"
+        case .inspectWebPage:
+            return "Inspect page"
+        case .activateWebNavTarget(let identity, _, _):
+            let short = identity.split(separator: "/").last.map(String.init) ?? identity
+            return short.isEmpty ? "Follow link" : "Follow \(short)"
+        case .browserBack:
+            return "Browser back"
         }
     }
 }

@@ -22,4 +22,8 @@ public struct NavigationChordPrimitive: Equatable, Sendable {
     public static func highlight(direction: ArrowDirection) -> NavigationChordPrimitive? {
         make(NavigationChordAllowlist.highlight(direction: direction))
     }
+
+    public static func browserBack() -> NavigationChordPrimitive? {
+        make(NavigationChordAllowlist.browserBack)
+    }
 }

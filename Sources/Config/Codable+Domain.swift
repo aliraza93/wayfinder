@@ -467,6 +467,25 @@ extension ActionKind: Codable {
             )
             self = .explorerFileSwitch(direction: direction)
 
+        case "inspectWebPage":
+            try StrictJSON.requireKeys(container, allowed: ["type"], path: "action")
+            self = .inspectWebPage
+
+        case "activateWebNavTarget":
+            try StrictJSON.requireKeys(
+                container,
+                allowed: ["type", "identity", "x", "y"],
+                path: "action"
+            )
+            let identity = try StrictJSON.decodeString(container, "identity", path: "action")
+            let x = try StrictJSON.decodeDouble(container, "x", path: "action")
+            let y = try StrictJSON.decodeDouble(container, "y", path: "action")
+            self = .activateWebNavTarget(identity: identity, x: x, y: y)
+
+        case "browserBack":
+            try StrictJSON.requireKeys(container, allowed: ["type"], path: "action")
+            self = .browserBack
+
         case "openExistingFile":
             try StrictJSON.requireKeys(container, allowed: ["type", "path"], path: "action")
             let path = try StrictJSON.decodeString(container, "path", path: "action")
@@ -526,6 +545,18 @@ extension ActionKind: Codable {
         case .explorerFileSwitch(let direction):
             try container.encode("explorerFileSwitch", forKey: StrictCodingKey(stringValue: "type"))
             try container.encode(direction, forKey: StrictCodingKey(stringValue: "direction"))
+
+        case .inspectWebPage:
+            try container.encode("inspectWebPage", forKey: StrictCodingKey(stringValue: "type"))
+
+        case .activateWebNavTarget(let identity, let x, let y):
+            try container.encode("activateWebNavTarget", forKey: StrictCodingKey(stringValue: "type"))
+            try container.encode(identity, forKey: StrictCodingKey(stringValue: "identity"))
+            try container.encode(x, forKey: StrictCodingKey(stringValue: "x"))
+            try container.encode(y, forKey: StrictCodingKey(stringValue: "y"))
+
+        case .browserBack:
+            try container.encode("browserBack", forKey: StrictCodingKey(stringValue: "type"))
 
         case .openExistingFile(let path):
             try container.encode("openExistingFile", forKey: StrictCodingKey(stringValue: "type"))
@@ -651,12 +682,17 @@ extension ReviewWorkspaceSettings: Codable {
                 "dwellMinSeconds", "dwellMaxSeconds",
                 "speed", "customIntervalSeconds", "targetOrder", "loopTargets",
                 "discoverRunningApps", "discovery", "refreshTargetsBetweenDwells",
+                "chrome",
             ],
             path: "review"
         )
         let discovery = try container.decodeIfPresent(
             DiscoveryScope.self,
             forKey: StrictCodingKey(stringValue: "discovery")
+        ) ?? .default
+        let chrome = try container.decodeIfPresent(
+            ChromeNavigationSettings.self,
+            forKey: StrictCodingKey(stringValue: "chrome")
         ) ?? .default
         var settings = ReviewWorkspaceSettings(
             workspacePath: (try? container.decode(String.self, forKey: StrictCodingKey(stringValue: "workspacePath"))) ?? "",
@@ -670,7 +706,8 @@ extension ReviewWorkspaceSettings: Codable {
             loopTargets: try StrictJSON.decodeIfPresentBool(container, "loopTargets") ?? true,
             discoverRunningApps: try StrictJSON.decodeIfPresentBool(container, "discoverRunningApps") ?? false,
             discovery: discovery,
-            refreshTargetsBetweenDwells: try StrictJSON.decodeIfPresentBool(container, "refreshTargetsBetweenDwells") ?? false
+            refreshTargetsBetweenDwells: try StrictJSON.decodeIfPresentBool(container, "refreshTargetsBetweenDwells") ?? false,
+            chrome: chrome
         )
         settings.normalize()
         self = settings
@@ -690,6 +727,7 @@ extension ReviewWorkspaceSettings: Codable {
         try container.encode(discoverRunningApps, forKey: StrictCodingKey(stringValue: "discoverRunningApps"))
         try container.encode(discovery, forKey: StrictCodingKey(stringValue: "discovery"))
         try container.encode(refreshTargetsBetweenDwells, forKey: StrictCodingKey(stringValue: "refreshTargetsBetweenDwells"))
+        try container.encode(chrome, forKey: StrictCodingKey(stringValue: "chrome"))
     }
 }
 
@@ -725,3 +763,81 @@ extension DiscoveryScope: Codable {
 
 extension NavigationSpeedPreset: Codable {}
 extension ReviewTargetOrder: Codable {}
+
+extension ChromeNavigationSettings: Codable {
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: StrictCodingKey.self)
+        try StrictJSON.requireKeys(
+            container,
+            allowed: [
+                "enabled", "profile", "allowedDomains", "externalDomainPolicy",
+                "maxDepth", "maxPages", "maxTimePerPageSeconds", "maxScrollsPerPage",
+                "crawlDocumentation", "crawlSourceFiles", "crawlRepositoryDirectories",
+                "crawlIssues", "githubStrategy", "selectedDirectories",
+                "preferredLinkKeywords", "excludedPathPrefixes",
+            ],
+            path: "review.chrome"
+        )
+        var settings = ChromeNavigationSettings(
+            enabled: try StrictJSON.decodeIfPresentBool(container, "enabled") ?? true,
+            profile: (try? container.decode(
+                ChromeNavigationProfile.self,
+                forKey: StrictCodingKey(stringValue: "profile")
+            )) ?? .generalWebsite,
+            allowedDomains: try container.decodeIfPresent(
+                [String].self,
+                forKey: StrictCodingKey(stringValue: "allowedDomains")
+            ) ?? [],
+            externalDomainPolicy: (try? container.decode(
+                ChromeExternalDomainPolicy.self,
+                forKey: StrictCodingKey(stringValue: "externalDomainPolicy")
+            )) ?? .blocked,
+            maxDepth: try StrictJSON.decodeIfPresentInt(container, "maxDepth") ?? 5,
+            maxPages: try StrictJSON.decodeIfPresentInt(container, "maxPages") ?? 20,
+            maxTimePerPageSeconds: try StrictJSON.decodeIfPresentDouble(container, "maxTimePerPageSeconds") ?? 180,
+            maxScrollsPerPage: try StrictJSON.decodeIfPresentInt(container, "maxScrollsPerPage") ?? 40,
+            crawlDocumentation: try StrictJSON.decodeIfPresentBool(container, "crawlDocumentation") ?? true,
+            crawlSourceFiles: try StrictJSON.decodeIfPresentBool(container, "crawlSourceFiles") ?? true,
+            crawlRepositoryDirectories: try StrictJSON.decodeIfPresentBool(container, "crawlRepositoryDirectories") ?? true,
+            crawlIssues: try StrictJSON.decodeIfPresentBool(container, "crawlIssues") ?? false,
+            githubStrategy: (try? container.decode(
+                GitHubCrawlStrategy.self,
+                forKey: StrictCodingKey(stringValue: "githubStrategy")
+            )) ?? .breadthFirst,
+            selectedDirectories: try container.decodeIfPresent(
+                [String].self,
+                forKey: StrictCodingKey(stringValue: "selectedDirectories")
+            ) ?? ["app/", "src/", "routes/", "tests/"],
+            preferredLinkKeywords: try container.decodeIfPresent(
+                [String].self,
+                forKey: StrictCodingKey(stringValue: "preferredLinkKeywords")
+            ) ?? [],
+            excludedPathPrefixes: try container.decodeIfPresent(
+                [String].self,
+                forKey: StrictCodingKey(stringValue: "excludedPathPrefixes")
+            ) ?? []
+        )
+        settings.normalize()
+        self = settings
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: StrictCodingKey.self)
+        try container.encode(enabled, forKey: StrictCodingKey(stringValue: "enabled"))
+        try container.encode(profile, forKey: StrictCodingKey(stringValue: "profile"))
+        try container.encode(allowedDomains, forKey: StrictCodingKey(stringValue: "allowedDomains"))
+        try container.encode(externalDomainPolicy, forKey: StrictCodingKey(stringValue: "externalDomainPolicy"))
+        try container.encode(maxDepth, forKey: StrictCodingKey(stringValue: "maxDepth"))
+        try container.encode(maxPages, forKey: StrictCodingKey(stringValue: "maxPages"))
+        try container.encode(maxTimePerPageSeconds, forKey: StrictCodingKey(stringValue: "maxTimePerPageSeconds"))
+        try container.encode(maxScrollsPerPage, forKey: StrictCodingKey(stringValue: "maxScrollsPerPage"))
+        try container.encode(crawlDocumentation, forKey: StrictCodingKey(stringValue: "crawlDocumentation"))
+        try container.encode(crawlSourceFiles, forKey: StrictCodingKey(stringValue: "crawlSourceFiles"))
+        try container.encode(crawlRepositoryDirectories, forKey: StrictCodingKey(stringValue: "crawlRepositoryDirectories"))
+        try container.encode(crawlIssues, forKey: StrictCodingKey(stringValue: "crawlIssues"))
+        try container.encode(githubStrategy, forKey: StrictCodingKey(stringValue: "githubStrategy"))
+        try container.encode(selectedDirectories, forKey: StrictCodingKey(stringValue: "selectedDirectories"))
+        try container.encode(preferredLinkKeywords, forKey: StrictCodingKey(stringValue: "preferredLinkKeywords"))
+        try container.encode(excludedPathPrefixes, forKey: StrictCodingKey(stringValue: "excludedPathPrefixes"))
+    }
+}

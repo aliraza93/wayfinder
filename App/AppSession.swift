@@ -288,6 +288,7 @@ final class AppSession: ObservableObject {
                     resolver: resolver,
                     preconditionProbe: precondition,
                     discoverySource: LiveApplicationDiscoverySource(),
+                    pageInspectionSource: LiveWebPageInspectionSource(),
                     engineHandler: { [weak self] engine in
                         await MainActor.run {
                             self?.activeEngine = engine

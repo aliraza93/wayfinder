@@ -31,6 +31,8 @@ public enum NavigationChordAllowlist: Sendable {
     public static let eKeyCode: UInt16 = 14
     /// Return — only allowlisted for explorer “open selection” (never generic typing).
     public static let returnKeyCode: UInt16 = 36
+    /// `[` — browser Back (Cmd+[).
+    public static let leftBracketKeyCode: UInt16 = 33
 
     public static let allowed: Set<NavigationChord> = [
         NavigationChord(keyCode: tabKeyCode, control: true, shift: false),
@@ -43,6 +45,8 @@ public enum NavigationChordAllowlist: Sendable {
         NavigationChord(keyCode: eKeyCode, shift: true, command: true),
         // Open explorer selection (Return) — only emitted by explorerFileSwitch
         NavigationChord(keyCode: returnKeyCode),
+        // Browser Back (Cmd+[)
+        NavigationChord(keyCode: leftBracketKeyCode, command: true),
     ]
 
     public static func contains(_ chord: NavigationChord) -> Bool {
@@ -75,5 +79,9 @@ public enum NavigationChordAllowlist: Sendable {
 
     public static var explorerOpenSelection: NavigationChord {
         NavigationChord(keyCode: returnKeyCode)
+    }
+
+    public static var browserBack: NavigationChord {
+        NavigationChord(keyCode: leftBracketKeyCode, command: true)
     }
 }

@@ -14,6 +14,9 @@ final class ActionTagTests: XCTestCase {
             .highlightNavigate(direction: .down),
             .contentClick,
             .explorerFileSwitch(direction: .next),
+            .inspectWebPage,
+            .activateWebNavTarget(identity: "https://example.com", x: 1, y: 2),
+            .browserBack,
             .openExistingFile(path: "/tmp/doc.txt"),
             .wait(seconds: 1.0),
             .returnToPrevious,
@@ -37,7 +40,7 @@ final class ActionTagTests: XCTestCase {
             _ = tags.verifiable
             _ = tags.primitive
         }
-        XCTAssertEqual(allActions.count, 12, "ActionKind cases including explorerFileSwitch")
+        XCTAssertEqual(allActions.count, 15, "ActionKind cases including Chrome web nav")
     }
 
     func testPrimitivesMatchIntent() {
@@ -74,9 +77,21 @@ final class ActionTagTests: XCTestCase {
             ActionKind.contentClick.capabilityTags.primitive,
             .targetedClick
         )
-        XCTAssertEqual(
+            XCTAssertEqual(
             ActionKind.explorerFileSwitch(direction: .next).capabilityTags.primitive,
             .targetedClick
+        )
+        XCTAssertEqual(
+            ActionKind.inspectWebPage.capabilityTags.primitive,
+            .none
+        )
+        XCTAssertEqual(
+            ActionKind.activateWebNavTarget(identity: "x", x: 1, y: 2).capabilityTags.primitive,
+            .targetedClick
+        )
+        XCTAssertEqual(
+            ActionKind.browserBack.capabilityTags.primitive,
+            .navigationChord
         )
         XCTAssertEqual(
             ActionKind.openExistingFile(path: "/a").capabilityTags.primitive,

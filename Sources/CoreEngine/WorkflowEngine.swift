@@ -40,6 +40,7 @@ public actor WorkflowEngine {
     private let preconditionProbe: any RunPreconditionProbe
     private let focusRestorer: any FocusRestorer
     private let discoverySource: any ApplicationDiscoverySource
+    private let pageInspectionSource: any WebPageInspectionSource
 
     public init(
         safety: SafetyPolicy = SafetyPolicy(),
@@ -49,7 +50,8 @@ public actor WorkflowEngine {
         recorder: RunRecorder = RunRecorder(),
         preconditionProbe: any RunPreconditionProbe = AlwaysReadyProbe(),
         focusRestorer: any FocusRestorer = NullFocusRestorer(),
-        discoverySource: any ApplicationDiscoverySource = EmptyApplicationDiscovery()
+        discoverySource: any ApplicationDiscoverySource = EmptyApplicationDiscovery(),
+        pageInspectionSource: any WebPageInspectionSource = EmptyWebPageInspection()
     ) {
         self.safety = safety
         self.executor = executor
@@ -59,6 +61,7 @@ public actor WorkflowEngine {
         self.preconditionProbe = preconditionProbe
         self.focusRestorer = focusRestorer
         self.discoverySource = discoverySource
+        self.pageInspectionSource = pageInspectionSource
     }
 
     public func runEvents() -> [RunEvent] {
@@ -266,6 +269,23 @@ public actor WorkflowEngine {
                         )
                         reviewUIPhase = "running"
                         continue
+                    }
+
+                    if controller.needsWebInspect {
+                        let bundleID = activeTarget?.bundleID
+                            ?? controller.browserBundleID
+                            ?? target.bundleID
+                        let snapshot = pageInspectionSource.inspectFrontmostPage(bundleID: bundleID)
+                            ?? .empty
+                        controller.applyWebSnapshot(snapshot, now: timing.clock.now)
+                        recordMeta(
+                            actionKind: "pageInspected",
+                            targetBundleID: bundleID,
+                            result: snapshot.isEmpty ? .skipped : .completed,
+                            identity: URLNormalizer.host(of: snapshot.url).isEmpty
+                                ? nil
+                                : URLNormalizer.normalize(snapshot.url)
+                        )
                     }
 
                     guard let pick = controller.nextPick(now: timing.clock.now) else {

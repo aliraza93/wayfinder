@@ -15,6 +15,12 @@ public enum ActionKind: Equatable, Sendable {
     /// Focus project explorer, move selection, open existing file (no path typing).
     case explorerFileSwitch(direction: WindowDirection)
     case openExistingFile(path: String)
+    /// Best-effort refresh of accessible page structure (no synthetic input).
+    case inspectWebPage
+    /// Targeted click on a safety-filtered navigation target (screen coords from inspector).
+    case activateWebNavTarget(identity: String, x: Double, y: Double)
+    /// Browser history back (allowlisted Cmd+[).
+    case browserBack
     case wait(seconds: Double)
     case returnToPrevious
 }

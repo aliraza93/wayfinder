@@ -36,8 +36,10 @@ final class NavigationChordAllowlistTests: XCTestCase {
     func testExplorerFocusAndOpenAreAllowlisted() {
         XCTAssertTrue(NavigationChordAllowlist.contains(NavigationChordAllowlist.focusExplorer))
         XCTAssertTrue(NavigationChordAllowlist.contains(NavigationChordAllowlist.explorerOpenSelection))
+        XCTAssertTrue(NavigationChordAllowlist.contains(NavigationChordAllowlist.browserBack))
         XCTAssertTrue(NavigationChordAllowlist.focusExplorer.command)
         XCTAssertTrue(NavigationChordAllowlist.focusExplorer.shift)
         XCTAssertEqual(NavigationChordAllowlist.explorerOpenSelection.keyCode, 36)
+        XCTAssertTrue(NavigationChordAllowlist.browserBack.command)
     }
 }

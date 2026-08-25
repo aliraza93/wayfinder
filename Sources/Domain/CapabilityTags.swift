@@ -93,6 +93,27 @@ public extension ActionKind {
                 verifiable: true,
                 primitive: .appControl
             )
+        case .inspectWebPage:
+            return CapabilityTags(
+                mutatesText: false,
+                requiresFocusGuard: false,
+                verifiable: false,
+                primitive: .none
+            )
+        case .activateWebNavTarget:
+            return CapabilityTags(
+                mutatesText: false,
+                requiresFocusGuard: true,
+                verifiable: false,
+                primitive: .targetedClick
+            )
+        case .browserBack:
+            return CapabilityTags(
+                mutatesText: false,
+                requiresFocusGuard: true,
+                verifiable: false,
+                primitive: .navigationChord
+            )
         case .wait:
             return CapabilityTags(
                 mutatesText: false,

@@ -177,6 +177,7 @@ public actor WorkflowRunner {
         resolver: any WorkflowTargetResolver = PermissiveTargetResolver(),
         preconditionProbe: any RunPreconditionProbe = AlwaysReadyProbe(),
         discoverySource: any ApplicationDiscoverySource = EmptyApplicationDiscovery(),
+        pageInspectionSource: any WebPageInspectionSource = EmptyWebPageInspection(),
         engineHandler: ((WorkflowEngine) async -> Void)? = nil
     ) async throws -> WorkflowRunSummary {
         let prepared = try prepare(workflowName: workflowName, resolver: resolver)
@@ -187,7 +188,8 @@ public actor WorkflowRunner {
             timing: timing,
             recorder: recorder,
             preconditionProbe: preconditionProbe,
-            discoverySource: discoverySource
+            discoverySource: discoverySource,
+            pageInspectionSource: pageInspectionSource
         )
         if let engineHandler {
             await engineHandler(engine)
@@ -211,6 +213,7 @@ public actor WorkflowRunner {
         resolver: any WorkflowTargetResolver = PermissiveTargetResolver(),
         preconditionProbe: any RunPreconditionProbe = AlwaysReadyProbe(),
         discoverySource: any ApplicationDiscoverySource = EmptyApplicationDiscovery(),
+        pageInspectionSource: any WebPageInspectionSource = EmptyWebPageInspection(),
         engineHandler: ((WorkflowEngine) async -> Void)? = nil
     ) async throws -> WorkflowRunSummary {
         let prepared = try prepare(workflow: workflow, resolver: resolver)
@@ -221,7 +224,8 @@ public actor WorkflowRunner {
             timing: timing,
             recorder: recorder,
             preconditionProbe: preconditionProbe,
-            discoverySource: discoverySource
+            discoverySource: discoverySource,
+            pageInspectionSource: pageInspectionSource
         )
         if let engineHandler {
             await engineHandler(engine)

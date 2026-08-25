@@ -112,9 +112,10 @@ public struct EditorAdapter: Sendable {
             return selectPage(move)
         case .arrowNavigate(let direction, _, _):
             return selectArrowNavigate(direction)
-        case .switchTab, .highlightNavigate, .contentClick, .explorerFileSwitch:
+        case .switchTab, .highlightNavigate, .contentClick, .explorerFileSwitch,
+             .activateWebNavTarget, .browserBack:
             return nil
-        case .wait, .activateApp, .switchWindow, .openExistingFile, .returnToPrevious:
+        case .wait, .activateApp, .switchWindow, .openExistingFile, .returnToPrevious, .inspectWebPage:
             return nil
         }
     }

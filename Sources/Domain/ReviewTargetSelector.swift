@@ -108,6 +108,8 @@ public struct ReviewSessionController: Sendable {
     private var surfaceSwitchesOnApp: Int
     /// After this many surface switches, leave for another app (when ≥2 apps in queue).
     private var maxSurfaceSwitchesBeforeAppChange: Int
+    /// Smart Chrome crawl (nil when disabled or not on a browser target).
+    public var chromeCrawl: ChromeCrawlSession?
 
     public init(
         settings: ReviewWorkspaceSettings,
@@ -136,6 +138,21 @@ public struct ReviewSessionController: Sendable {
         self.surfaceSession = nil
         self.surfaceSwitchesOnApp = 0
         self.maxSurfaceSwitchesBeforeAppChange = Self.plannedSurfaceSwitches(for: queue)
+        self.chromeCrawl = nil
+    }
+
+    /// True when the engine should refresh the accessible page snapshot before the next pick.
+    public var needsWebInspect: Bool {
+        guard settings.chrome.enabled, currentAppClass() == .browser else { return false }
+        return chromeCrawl?.needsInspect ?? true
+    }
+
+    /// Apply a best-effort page snapshot from Accessibility.
+    public mutating func applyWebSnapshot(_ snapshot: WebPageSnapshot, now: Date = Date()) {
+        if chromeCrawl == nil, settings.chrome.enabled {
+            chromeCrawl = ChromeCrawlSession(settings: settings.chrome, now: now)
+        }
+        chromeCrawl?.applySnapshot(snapshot, now: now)
     }
 
     public var dwellAllocatedSeconds: Double? {
@@ -202,6 +219,20 @@ public struct ReviewSessionController: Sendable {
         }
 
         crawlStepsOnTarget += 1
+
+        // Smart Chrome / browser crawl when enabled.
+        if settings.chrome.enabled, currentAppClass() == .browser {
+            if chromeCrawl == nil {
+                chromeCrawl = ChromeCrawlSession(settings: settings.chrome, now: now)
+            }
+            if var session = chromeCrawl {
+                let decision = session.nextDecision(now: now)
+                chromeCrawl = session
+                if let pick = mapChromeDecision(decision, now: now) {
+                    return pick
+                }
+            }
+        }
 
         // Per-file dwell expired → another file/tab, or rotate to the next Target app.
         if let session = surfaceSession, session.isExpired(at: now) {
@@ -283,6 +314,11 @@ public struct ReviewSessionController: Sendable {
         dwellEndsAt = now.addingTimeInterval(dwell)
         let upcoming = (safe + 1) % queue.count
         nextPreview = queue.count > 1 ? queue[upcoming] : nil
+        if settings.chrome.enabled, appClass(of: queue[safe]) == .browser {
+            chromeCrawl = ChromeCrawlSession(settings: settings.chrome, now: now)
+        } else {
+            chromeCrawl = nil
+        }
         return focusAppPick()
     }
 
@@ -521,6 +557,64 @@ public struct ReviewSessionController: Sendable {
                     identity: current?.identity
                 )
             }
+        }
+    }
+
+    private mutating func mapChromeDecision(_ decision: ChromeCrawlDecision, now: Date) -> TimedReviewPick? {
+        switch decision {
+        case .inspect:
+            return TimedReviewPick(
+                action: .inspectWebPage,
+                gapSeconds: 0.15,
+                metaKind: "pageInspectRequested",
+                identity: current?.identity
+            )
+        case .activate(let identity, let x, let y):
+            if var session = chromeCrawl {
+                session.noteActivationCompleted()
+                chromeCrawl = session
+            }
+            return TimedReviewPick(
+                action: .activateWebNavTarget(identity: identity, x: x, y: y),
+                gapSeconds: max(0.6, settings.actionIntervalSeconds),
+                metaKind: "webNavActivated",
+                identity: identity
+            )
+        case .scroll(let direction, let amount):
+            return TimedReviewPick(
+                action: .scroll(direction: direction, amount: amount),
+                gapSeconds: settings.actionIntervalSeconds,
+                metaKind: "webScroll",
+                identity: chromeCrawl?.currentURL
+            )
+        case .browserBack:
+            return TimedReviewPick(
+                action: .browserBack,
+                gapSeconds: max(0.5, settings.actionIntervalSeconds),
+                metaKind: "browserBack",
+                identity: chromeCrawl?.currentURL
+            )
+        case .switchTab(let direction):
+            surfaceSwitchesOnApp += 1
+            if shouldRotateToAlternateApp() {
+                return completeTargetEarly(now: now, reasonAction: .switchTab(direction: direction))
+            }
+            beginSurfaceSession(now: now)
+            return TimedReviewPick(
+                action: .switchTab(direction: direction),
+                gapSeconds: settings.randomInterFilePauseSeconds(),
+                metaKind: "surfaceSwitched",
+                identity: current?.identity
+            )
+        case .wait(let seconds):
+            return TimedReviewPick(
+                action: .wait(seconds: seconds),
+                gapSeconds: 0.05,
+                metaKind: "webWait",
+                identity: chromeCrawl?.currentURL
+            )
+        case .yieldToUniversal:
+            return nil
         }
     }
 

@@ -331,14 +331,76 @@ struct WorkflowEditorView: View {
     private var reviewChromeCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Chrome tabs")
+                Text("Chrome")
                     .font(.headline)
+
+                Toggle("Enable smart web navigation", isOn: $model.chromeEnabled)
+                    .onChange(of: model.chromeEnabled) { _ in model.pushReviewSettings() }
+
+                Picker("Navigation profile", selection: $model.chromeProfile) {
+                    Text("Documentation").tag(ChromeNavigationProfile.documentation)
+                    Text("GitHub Repository").tag(ChromeNavigationProfile.githubRepository)
+                    Text("General Website").tag(ChromeNavigationProfile.generalWebsite)
+                    Text("Custom").tag(ChromeNavigationProfile.custom)
+                }
+                .onChange(of: model.chromeProfile) { _ in model.pushReviewSettings() }
+
+                Text("Allowed domains (one per line)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $model.chromeAllowedDomainsText)
+                    .font(.body)
+                    .frame(minHeight: 52, maxHeight: 88)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.secondary.opacity(0.25))
+                    )
+                    .onChange(of: model.chromeAllowedDomainsText) { _ in model.pushReviewSettings() }
+
+                Picker("External domains", selection: $model.chromeExternalPolicy) {
+                    Text("Blocked").tag(ChromeExternalDomainPolicy.blocked)
+                    Text("Allowlist only").tag(ChromeExternalDomainPolicy.allowlist)
+                }
+                .onChange(of: model.chromeExternalPolicy) { _ in model.pushReviewSettings() }
+
+                HStack {
+                    Stepper("Max depth: \(model.chromeMaxDepth)", value: $model.chromeMaxDepth, in: 1...25)
+                        .onChange(of: model.chromeMaxDepth) { _ in model.pushReviewSettings() }
+                    Stepper("Max pages: \(model.chromeMaxPages)", value: $model.chromeMaxPages, in: 1...200)
+                        .onChange(of: model.chromeMaxPages) { _ in model.pushReviewSettings() }
+                }
+                Stepper(
+                    "Max time per page: \(model.chromeMaxTimePerPageMinutes) min",
+                    value: $model.chromeMaxTimePerPageMinutes,
+                    in: 1...30
+                )
+                .onChange(of: model.chromeMaxTimePerPageMinutes) { _ in model.pushReviewSettings() }
+
+                Toggle("Documentation", isOn: $model.chromeCrawlDocumentation)
+                    .onChange(of: model.chromeCrawlDocumentation) { _ in model.pushReviewSettings() }
+                Toggle("Source files", isOn: $model.chromeCrawlSourceFiles)
+                    .onChange(of: model.chromeCrawlSourceFiles) { _ in model.pushReviewSettings() }
+                Toggle("Repository directories", isOn: $model.chromeCrawlDirectories)
+                    .onChange(of: model.chromeCrawlDirectories) { _ in model.pushReviewSettings() }
+                Toggle("Issues (off by default)", isOn: $model.chromeCrawlIssues)
+                    .onChange(of: model.chromeCrawlIssues) { _ in model.pushReviewSettings() }
+
+                Picker("GitHub crawl", selection: $model.chromeGithubStrategy) {
+                    Text("Breadth-first").tag(GitHubCrawlStrategy.breadthFirst)
+                    Text("Depth-first").tag(GitHubCrawlStrategy.depthFirst)
+                    Text("Selected directories").tag(GitHubCrawlStrategy.selectedDirectories)
+                }
+                .onChange(of: model.chromeGithubStrategy) { _ in model.pushReviewSettings() }
+
+                Divider()
+                Text("Chrome tabs")
+                    .font(.subheadline.weight(.semibold))
                 HStack {
                     TextField("Tab label (for status / logs)", text: $model.tabDraft)
                         .textFieldStyle(.roundedBorder)
                     Button("Add tab") { model.addTab() }
                 }
-                Text("Labels identify tabs in the dashboard. Switching uses allowlisted Ctrl+Tab among open tabs.")
+                Text("Labels identify tabs in the dashboard. Smart navigation inspects the active page; Ctrl+Tab remains a fallback.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -557,6 +619,18 @@ final class WorkflowEditorUIModel: ObservableObject {
     @Published var tabDraft = ""
     @Published private(set) var filePaths: [String] = []
     @Published private(set) var tabLabels: [String] = []
+    @Published var chromeEnabled = true
+    @Published var chromeProfile: ChromeNavigationProfile = .generalWebsite
+    @Published var chromeAllowedDomainsText = ""
+    @Published var chromeExternalPolicy: ChromeExternalDomainPolicy = .blocked
+    @Published var chromeMaxDepth = 5
+    @Published var chromeMaxPages = 20
+    @Published var chromeMaxTimePerPageMinutes = 3
+    @Published var chromeCrawlDocumentation = true
+    @Published var chromeCrawlSourceFiles = true
+    @Published var chromeCrawlDirectories = true
+    @Published var chromeCrawlIssues = false
+    @Published var chromeGithubStrategy: GitHubCrawlStrategy = .breadthFirst
     @Published var selectedRunningIndex = -1
     @Published var selectedClass: TargetAppClass = .generic
     @Published var selectedSavedName: String = ""
@@ -652,6 +726,23 @@ final class WorkflowEditorUIModel: ObservableObject {
             includeOther: includeOther
         )
         settings.refreshTargetsBetweenDwells = refreshTargetsBetweenDwells
+        var chrome = settings.chrome
+        chrome.enabled = chromeEnabled
+        chrome.profile = chromeProfile
+        chrome.allowedDomains = chromeAllowedDomainsText
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+        chrome.externalDomainPolicy = chromeExternalPolicy
+        chrome.maxDepth = chromeMaxDepth
+        chrome.maxPages = chromeMaxPages
+        chrome.maxTimePerPageSeconds = Double(chromeMaxTimePerPageMinutes) * 60
+        chrome.crawlDocumentation = chromeCrawlDocumentation
+        chrome.crawlSourceFiles = chromeCrawlSourceFiles
+        chrome.crawlRepositoryDirectories = chromeCrawlDirectories
+        chrome.crawlIssues = chromeCrawlIssues
+        chrome.githubStrategy = chromeGithubStrategy
+        chrome.normalize()
+        settings.chrome = chrome
         viewModel.setReviewSettings(settings)
         syncFromVM(selectedName: selectedSavedName)
     }
@@ -837,6 +928,21 @@ final class WorkflowEditorUIModel: ObservableObject {
         workspacePath = viewModel.draft.review.workspacePath
         filePaths = viewModel.draft.review.filePaths
         tabLabels = viewModel.draft.review.chromeTabLabels
+        chromeEnabled = viewModel.draft.review.chrome.enabled
+        chromeProfile = viewModel.draft.review.chrome.profile
+        chromeAllowedDomainsText = viewModel.draft.review.chrome.allowedDomains.joined(separator: "\n")
+        chromeExternalPolicy = viewModel.draft.review.chrome.externalDomainPolicy
+        chromeMaxDepth = viewModel.draft.review.chrome.maxDepth
+        chromeMaxPages = viewModel.draft.review.chrome.maxPages
+        chromeMaxTimePerPageMinutes = max(
+            1,
+            Int((viewModel.draft.review.chrome.maxTimePerPageSeconds / 60).rounded())
+        )
+        chromeCrawlDocumentation = viewModel.draft.review.chrome.crawlDocumentation
+        chromeCrawlSourceFiles = viewModel.draft.review.chrome.crawlSourceFiles
+        chromeCrawlDirectories = viewModel.draft.review.chrome.crawlRepositoryDirectories
+        chromeCrawlIssues = viewModel.draft.review.chrome.crawlIssues
+        chromeGithubStrategy = viewModel.draft.review.chrome.githubStrategy
         if durationPreset == .custom, let seconds = viewModel.draft.maxDurationSeconds {
             customDurationMinutes = max(1, Int((seconds / 60).rounded()))
         }
