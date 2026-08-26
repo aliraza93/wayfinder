@@ -449,11 +449,11 @@ public final class WorkflowEditorViewModel: @unchecked Sendable {
 
     public func resetDraft() {
         draft = WorkflowDraft(
-            name: ReadAndReviewWorkspace.workflowName,
+            name: UniversalWorkspaceNavigation.workflowName,
             maxDurationSeconds: 60,
             untilStopped: false,
             shuffleSteps: true,
-            review: .default
+            review: .universalDefault
         )
         draft.loopEnabled = true
         draft.maxIterations = NavigationLimits.absoluteMaxIterations

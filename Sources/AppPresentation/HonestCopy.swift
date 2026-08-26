@@ -1,9 +1,9 @@
 import Domain
 import Foundation
 
-/// Honest product copy — what Waypoint does and will never do.
+/// Honest product copy — what Tiktik Ghora does and will never do.
 public enum HonestCopy {
-    public static let tagline = "Hands-free navigation. Never touches your work."
+    public static let tagline = ProductIdentity.tagline
 
     public static let does = """
     Universal Workspace Navigation crawls only the apps you add as Targets (e.g. Cursor + Chrome). \
@@ -20,8 +20,8 @@ public enum HonestCopy {
     """
 
     public static let permissionWhy = """
-    Accessibility permission lets Waypoint verify the frontmost app and perform read-only \
-    navigation (scroll, page/arrow keys, allowlisted tab/explorer navigation, content clicks, \
+    Accessibility permission lets \(ProductIdentity.displayName) verify the frontmost app and perform \
+    read-only navigation (scroll, page/arrow keys, allowlisted tab/explorer navigation, content clicks, \
     and best-effort page structure for safe link clicks) — nothing that rewrites your source.
     """
 

@@ -8,6 +8,8 @@ public enum WebNavRole: String, Equatable, Sendable, Codable {
     case navigation
     case pagination
     case expandable
+    case tab
+    case scrollContainer
     case unknown
 }
 
@@ -32,6 +34,9 @@ public struct WebNavElement: Equatable, Sendable {
     public var href: String?
     public var centerX: Double
     public var centerY: Double
+    /// Browser chrome vs page content — browser UI must never be activated.
+    public var surface: WebNavSurface
+    public var classification: WebElementKind
 
     public init(
         identity: String,
@@ -39,7 +44,9 @@ public struct WebNavElement: Equatable, Sendable {
         name: String,
         href: String? = nil,
         centerX: Double,
-        centerY: Double
+        centerY: Double,
+        surface: WebNavSurface = .unknown,
+        classification: WebElementKind = .unknown
     ) {
         self.identity = identity
         self.role = role
@@ -47,6 +54,8 @@ public struct WebNavElement: Equatable, Sendable {
         self.href = href
         self.centerX = centerX
         self.centerY = centerY
+        self.surface = surface
+        self.classification = classification
     }
 }
 
@@ -60,6 +69,8 @@ public struct WebPageSnapshot: Equatable, Sendable {
     public var buttons: [WebNavElement]
     public var pagination: [WebNavElement]
     public var sections: [WebNavElement]
+    public var tabs: [WebNavElement]
+    public var scrollContainers: [WebNavElement]
     public var kind: WebPageKind
     public var inspectedAt: Date
 
@@ -72,6 +83,8 @@ public struct WebPageSnapshot: Equatable, Sendable {
         buttons: [WebNavElement] = [],
         pagination: [WebNavElement] = [],
         sections: [WebNavElement] = [],
+        tabs: [WebNavElement] = [],
+        scrollContainers: [WebNavElement] = [],
         kind: WebPageKind = .generic,
         inspectedAt: Date = Date()
     ) {
@@ -83,6 +96,8 @@ public struct WebPageSnapshot: Equatable, Sendable {
         self.buttons = buttons
         self.pagination = pagination
         self.sections = sections
+        self.tabs = tabs
+        self.scrollContainers = scrollContainers
         self.kind = kind
         self.inspectedAt = inspectedAt
     }
@@ -90,11 +105,77 @@ public struct WebPageSnapshot: Equatable, Sendable {
     public static let empty = WebPageSnapshot()
 
     public var isEmpty: Bool {
-        url.isEmpty && links.isEmpty && navigation.isEmpty && pagination.isEmpty && buttons.isEmpty
+        url.isEmpty
+            && links.isEmpty
+            && navigation.isEmpty
+            && pagination.isEmpty
+            && buttons.isEmpty
+            && headings.isEmpty
+            && tabs.isEmpty
     }
 
+    /// Elements eligible for scored activation — page content only, never browser UI.
     public var allCandidates: [WebNavElement] {
-        navigation + links + buttons + pagination + sections
+        (navigation + links + pagination + sections)
+            .filter { $0.surface != .browserUI }
+            .filter { $0.classification != .browserUI }
+            .filter { WebElementClassifier.isActivatable($0.classification) || $0.classification == .unknown }
+    }
+
+    /// Stable fingerprint for infinite-scroll “did content change?” checks (no body text).
+    public var contentFingerprint: String {
+        let linkPart = links.prefix(48).map(\.identity).joined(separator: "\u{1f}")
+        let headingPart = headings.prefix(16).map(\.name).joined(separator: "\u{1f}")
+        return [
+            URLNormalizer.normalize(url),
+            title,
+            "\(links.count)",
+            "\(headings.count)",
+            "\(pagination.count)",
+            linkPart,
+            headingPart,
+        ].joined(separator: "\u{1e}")
+    }
+
+    public var looksLikeDocumentation: Bool {
+        if kind == .documentation { return true }
+        if navigation.contains(where: {
+            let n = $0.name.lowercased()
+            return n.contains("contents") || n.contains("sidebar") || n.contains("toc")
+        }) {
+            return true
+        }
+        if pagination.contains(where: {
+            let n = $0.name.lowercased()
+            return n.contains("next") || n.contains("prev")
+        }) {
+            return true
+        }
+        return false
+    }
+
+    /// Heuristic read length (0.2…1.4) from structure only — never document body.
+    /// Longer pages/files get higher weight so the workflow stays longer.
+    public var estimatedReadWeight: Double {
+        var weight = 0.35
+        switch kind {
+        case .githubBlob:
+            weight += 0.55
+        case .documentation:
+            weight += 0.35
+        case .githubTree, .githubRepoRoot:
+            weight += 0.15
+        case .githubIssues, .githubOther:
+            weight += 0.2
+        case .generic:
+            break
+        }
+        if looksLikeDocumentation { weight += 0.15 }
+        weight += min(0.35, Double(links.count) / 70.0)
+        weight += min(0.2, Double(headings.count) / 35.0)
+        weight += min(0.2, Double(scrollContainers.count) * 0.08)
+        weight += min(0.15, Double(sections.count) / 40.0)
+        return min(1.4, max(0.2, weight))
     }
 }
 

@@ -90,7 +90,7 @@ extension ReviewSessionController {
             .arrowNavigate(direction: .up, presses: 1, intervalSeconds: 0),
             .pageNavigate(.pageDown),
             .pageNavigate(.pageUp),
-            .scroll(direction: .down, amount: 4),
+            .pageNavigate(.home),
             .contentClick,
             .highlightNavigate(direction: .down),
             .switchTab(direction: .next),

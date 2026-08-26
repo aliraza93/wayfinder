@@ -6,7 +6,8 @@ public enum NavigationPlanner: Sendable {
     public static func buildQueue(
         settings: ReviewWorkspaceSettings,
         discovered: [DiscoveredApplication],
-        workflowTargets: [TargetApp]
+        workflowTargets: [TargetApp],
+        visited: VisitedTargetTracker = .empty
     ) -> [ReviewTarget] {
         var settings = settings
         settings.normalize()
@@ -86,12 +87,68 @@ public enum NavigationPlanner: Sendable {
             }
         }
 
+        return orderQueue(queue, settings: settings, visited: visited)
+    }
+
+    /// Apply target-order mode without rebuilding membership.
+    public static func orderQueue(
+        _ queue: [ReviewTarget],
+        settings: ReviewWorkspaceSettings,
+        visited: VisitedTargetTracker = .empty
+    ) -> [ReviewTarget] {
         switch settings.targetOrder {
         case .sequential:
             return interleaveByAppClass(queue)
         case .random:
-            // Shuffle within class, then interleave so Cursor↔Chrome both get turns.
             return interleaveByAppClass(queue.shuffled())
+        case .configuredPriority:
+            return queue
+        case .applicationPriority:
+            return orderByApplicationPriority(queue)
+        case .targetRotation:
+            return orderForRotation(queue, visited: visited)
+        }
+    }
+
+    /// Prefer Cursor → Chrome → Finder → Preview → Safari → others, then display name.
+    public static func orderByApplicationPriority(_ queue: [ReviewTarget]) -> [ReviewTarget] {
+        queue.sorted { a, b in
+            let pa = applicationPriority(of: a)
+            let pb = applicationPriority(of: b)
+            if pa != pb { return pa < pb }
+            return a.identity.localizedCaseInsensitiveCompare(b.identity) == .orderedAscending
+        }
+    }
+
+    /// Least-visited first, then application priority — enables rotation across long sessions.
+    public static func orderForRotation(
+        _ queue: [ReviewTarget],
+        visited: VisitedTargetTracker
+    ) -> [ReviewTarget] {
+        queue.sorted { a, b in
+            let ka = identityKey(a)
+            let kb = identityKey(b)
+            let va = visited.visitCount(for: ka)
+            let vb = visited.visitCount(for: kb)
+            if va != vb { return va < vb }
+            let pa = applicationPriority(of: a)
+            let pb = applicationPriority(of: b)
+            if pa != pb { return pa < pb }
+            return a.identity.localizedCaseInsensitiveCompare(b.identity) == .orderedAscending
+        }
+    }
+
+    public static func applicationPriority(of target: ReviewTarget) -> Int {
+        switch target {
+        case .editorFile:
+            return 0
+        case .chromeTab:
+            return 1
+        case .discoveredApp(let bundleID, _, let classification):
+            return WorkspaceDiscoveryPlanner.priority(
+                bundleID: bundleID,
+                classification: classification
+            )
         }
     }
 
@@ -102,29 +159,47 @@ public enum NavigationPlanner: Sendable {
         previous: [ReviewTarget],
         settings: ReviewWorkspaceSettings,
         discovered: [DiscoveredApplication],
-        workflowTargets: [TargetApp]
+        workflowTargets: [TargetApp],
+        visited: VisitedTargetTracker = .empty
     ) -> [ReviewTarget] {
         let rebuilt = buildQueue(
             settings: settings,
             discovered: discovered,
-            workflowTargets: workflowTargets
+            workflowTargets: workflowTargets,
+            visited: visited
         )
         var result: [ReviewTarget] = []
         if let current {
             result.append(current)
         }
         let currentKey = current.map(identityKey)
+        let runningBundleIDs = Set(discovered.map(\.bundleID))
+        let allowlist = Set(workflowTargets.map(\.bundleID))
+
         for target in rebuilt {
             let key = identityKey(target)
             if key == currentKey { continue }
+            // Drop discovered-only apps that are no longer running.
+            if case .discoveredApp(let bundleID, _, _) = target,
+               !allowlist.contains(bundleID),
+               !runningBundleIDs.contains(bundleID)
+            {
+                continue
+            }
             result.append(target)
         }
         if index + 1 < previous.count {
             for leftover in previous[(index + 1)...] {
                 let key = identityKey(leftover)
-                if !result.contains(where: { identityKey($0) == key }) {
-                    if case .editorFile = leftover { result.append(leftover) }
-                    if case .chromeTab = leftover { result.append(leftover) }
+                if result.contains(where: { identityKey($0) == key }) { continue }
+                switch leftover {
+                case .editorFile, .chromeTab:
+                    result.append(leftover)
+                case .discoveredApp(let bundleID, _, _):
+                    // Keep allowlisted apps; drop unavailable discovery extras.
+                    if allowlist.contains(bundleID) || runningBundleIDs.contains(bundleID) {
+                        result.append(leftover)
+                    }
                 }
             }
         }
@@ -180,10 +255,11 @@ public enum NavigationPlanner: Sendable {
             if step == 1 {
                 return CrawlTick(action: .pageNavigate(.home), resetsDownStreak: true)
             }
-            if !conservative, roll < 55 {
+            // Browsers never use geometric contentClick (hits Chrome chrome).
+            if classification != .browser, !conservative, roll < 55 {
                 return CrawlTick(action: .contentClick, resetsDownStreak: true)
             }
-            if !conservative, roll < 80 {
+            if classification != .browser, !conservative, roll < 80 {
                 return CrawlTick(action: .highlightNavigate(direction: .down), resetsDownStreak: true)
             }
             return CrawlTick(
@@ -211,23 +287,24 @@ public enum NavigationPlanner: Sendable {
 
         // Too much downward motion: pull back to top/middle instead of End.
         if consecutiveDown >= 10 {
-            if roll < 40 {
+            if roll < 45 {
                 return CrawlTick(action: .pageNavigate(.home), resetsDownStreak: true)
             }
-            if roll < 70 {
+            if roll < 75 {
                 return CrawlTick(action: .pageNavigate(.pageUp), resetsDownStreak: true)
             }
             return CrawlTick(
-                action: .scroll(direction: .up, amount: Int.random(in: 3...7)),
+                action: .arrowNavigate(direction: .up, presses: Int.random(in: 3...6), intervalSeconds: 0),
                 resetsDownStreak: true
             )
         }
 
-        // Mid-file variety: highlight lines, double-click content, gentle scroll — stay mid-doc.
-        if !conservative, roll < 18 {
+        // Mid-file variety: highlight lines, page/arrow keys — never scroll-wheel in default crawl.
+        // Never geometric contentClick in browsers (Chrome toolbar / tab strip risk).
+        if classification != .browser, !conservative, roll < 18 {
             return CrawlTick(action: .contentClick, resetsDownStreak: true)
         }
-        if !conservative, roll < 32 {
+        if classification != .browser, !conservative, roll < 32 {
             let dir: ArrowDirection = Bool.random() ? .down : .up
             return CrawlTick(action: .highlightNavigate(direction: dir), resetsDownStreak: dir == .up)
         }
@@ -237,17 +314,30 @@ public enum NavigationPlanner: Sendable {
                 resetsDownStreak: true
             )
         }
-        if roll < 52 {
-            return CrawlTick(action: .scroll(direction: .up, amount: Int.random(in: 2...5)), resetsDownStreak: true)
+        if roll < 55 {
+            return CrawlTick(
+                action: .arrowNavigate(direction: .up, presses: Int.random(in: 2...4), intervalSeconds: 0),
+                resetsDownStreak: true
+            )
         }
-        // Occasional gentle page down (not End).
-        if roll < 62, consecutiveDown < 6 {
+        // Prefer Page Down for longer progress; arrows for fine movement.
+        if pace == .longContent {
+            if roll < 78 {
+                return CrawlTick(action: .pageNavigate(.pageDown))
+            }
+            return CrawlTick(
+                action: .arrowNavigate(direction: .down, presses: Int.random(in: 2...4), intervalSeconds: 0)
+            )
+        }
+        if roll < 72, consecutiveDown < 8 {
             return CrawlTick(action: .pageNavigate(.pageDown))
         }
-        if roll < 78 {
-            return CrawlTick(action: .scroll(direction: .down, amount: Int.random(in: 2...4)))
+        if roll < 88 {
+            return CrawlTick(
+                action: .arrowNavigate(direction: .down, presses: Int.random(in: 1...3), intervalSeconds: 0)
+            )
         }
-        if !conservative, step > 14, roll < 84 {
+        if !conservative, step > 14, roll < 94 {
             return CrawlTick(
                 action: surfaceSwitchAction(classification: classification),
                 resetsDownStreak: true

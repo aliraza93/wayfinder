@@ -26,7 +26,13 @@ public struct ChromeNavigationSettings: Equatable, Sendable {
     public var enabled: Bool
     public var profile: ChromeNavigationProfile
     public var allowedDomains: [String]
+    /// Explicit denylist — always blocked even if same-site heuristics would allow.
+    public var blockedDomains: [String]
     public var externalDomainPolicy: ChromeExternalDomainPolicy
+    /// Prefer current host only (default). Mapped into `DomainPolicy.currentDomainOnly`.
+    public var currentDomainOnly: Bool
+    /// Opt-in external hosts (default false).
+    public var allowExternalLinks: Bool
     public var maxDepth: Int
     public var maxPages: Int
     public var maxTimePerPageSeconds: Double
@@ -44,8 +50,11 @@ public struct ChromeNavigationSettings: Equatable, Sendable {
         enabled: Bool = true,
         profile: ChromeNavigationProfile = .generalWebsite,
         allowedDomains: [String] = [],
+        blockedDomains: [String] = [],
         externalDomainPolicy: ChromeExternalDomainPolicy = .blocked,
-        maxDepth: Int = 5,
+        currentDomainOnly: Bool = true,
+        allowExternalLinks: Bool = false,
+        maxDepth: Int = 3,
         maxPages: Int = 20,
         maxTimePerPageSeconds: Double = 180,
         maxScrollsPerPage: Int = 40,
@@ -61,7 +70,10 @@ public struct ChromeNavigationSettings: Equatable, Sendable {
         self.enabled = enabled
         self.profile = profile
         self.allowedDomains = allowedDomains
+        self.blockedDomains = blockedDomains
         self.externalDomainPolicy = externalDomainPolicy
+        self.currentDomainOnly = currentDomainOnly
+        self.allowExternalLinks = allowExternalLinks
         self.maxDepth = maxDepth
         self.maxPages = maxPages
         self.maxTimePerPageSeconds = maxTimePerPageSeconds
@@ -78,12 +90,29 @@ public struct ChromeNavigationSettings: Equatable, Sendable {
 
     public static let `default` = ChromeNavigationSettings()
 
+    /// Derived domain gate used by the crawl filter.
+    public var domainPolicy: DomainPolicy {
+        DomainPolicy(
+            currentDomainOnly: currentDomainOnly,
+            allowedDomains: allowedDomains,
+            blockedDomains: blockedDomains,
+            allowExternalLinks: allowExternalLinks || externalDomainPolicy == .allowlist
+        )
+    }
+
     public mutating func normalize() {
         maxDepth = min(max(1, maxDepth), 25)
         maxPages = min(max(1, maxPages), 200)
         maxTimePerPageSeconds = min(max(15, maxTimePerPageSeconds), 1_800)
         maxScrollsPerPage = min(max(5, maxScrollsPerPage), 200)
         allowedDomains = Self.normalizeDomains(allowedDomains)
+        blockedDomains = Self.normalizeDomains(blockedDomains)
+        if allowExternalLinks {
+            currentDomainOnly = false
+        }
+        if externalDomainPolicy == .allowlist, !allowedDomains.isEmpty {
+            // Allowlist mode still requires explicit domains; keep currentDomainOnly for same-site.
+        }
         preferredLinkKeywords = preferredLinkKeywords
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { !$0.isEmpty }
@@ -94,9 +123,6 @@ public struct ChromeNavigationSettings: Equatable, Sendable {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .map { $0.hasSuffix("/") ? $0 : $0 + "/" }
-        if !crawlIssues {
-            crawlIssues = false
-        }
     }
 
     public static func normalizeDomains(_ domains: [String]) -> [String] {

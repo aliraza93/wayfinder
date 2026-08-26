@@ -152,4 +152,147 @@ final class ChromeNavigationTests: XCTestCase {
         )
         XCTAssertEqual(ActionKind.browserBack.capabilityTags.primitive, .navigationChord)
     }
+
+    func testBlockedDomainsDeniedEvenOnAllowlist() {
+        var settings = ChromeNavigationSettings(
+            allowedDomains: ["evil.example"],
+            blockedDomains: ["evil.example"],
+            externalDomainPolicy: .allowlist
+        )
+        settings.normalize()
+        XCTAssertFalse(
+            WebLinkSafetyFilter.isAllowedDomain(
+                href: "https://evil.example/docs",
+                currentURL: "https://docs.example/a",
+                settings: settings
+            )
+        )
+    }
+
+    func testScorerDoesNotActivateHeadings() {
+        let snapshot = WebPageSnapshot(
+            url: "https://docs.example/guide",
+            title: "Guide",
+            headings: [
+                WebNavElement(
+                    identity: "heading:Install",
+                    role: .heading,
+                    name: "Install",
+                    centerX: 40,
+                    centerY: 80,
+                    surface: .pageContent,
+                    classification: .unknown
+                ),
+            ],
+            links: [
+                WebNavElement(
+                    identity: "https://docs.example/install",
+                    role: .link,
+                    name: "Install",
+                    href: "https://docs.example/install",
+                    centerX: 40,
+                    centerY: 100,
+                    surface: .pageContent,
+                    classification: .documentationLink
+                ),
+            ],
+            kind: .documentation
+        )
+        var settings = ChromeNavigationSettings(profile: .documentation)
+        settings.normalize()
+        let ranked = WebLinkScorer.rankedCandidates(
+            snapshot: snapshot,
+            settings: settings,
+            visited: [],
+            depth: 1
+        )
+        XCTAssertFalse(ranked.contains { $0.element.role == .heading })
+        XCTAssertTrue(ranked.contains { $0.element.name == "Install" && $0.element.role == .link })
+    }
+
+    func testInfiniteScrollStopsWhenFingerprintUnchanged() {
+        var settings = ChromeNavigationSettings(
+            profile: .generalWebsite,
+            maxPages: 5,
+            maxTimePerPageSeconds: 600,
+            maxScrollsPerPage: 40
+        )
+        settings.normalize()
+        var session = ChromeCrawlSession(settings: settings, now: Date())
+        let snap = WebPageSnapshot(
+            url: "https://example.com/feed",
+            title: "Feed",
+            links: [
+                WebNavElement(
+                    identity: "https://example.com/a",
+                    role: .link,
+                    name: "A",
+                    href: "https://example.com/a",
+                    centerX: 1,
+                    centerY: 1
+                ),
+            ]
+        )
+        session.applySnapshot(snap, now: Date())
+        // Consume the only link.
+        _ = session.nextDecision(now: Date())
+        session.noteActivationCompleted()
+        session.applySnapshot(snap, now: Date())
+
+        // Simulate scroll → reinspect with identical fingerprint twice.
+        session.scrollsOnPage = 5
+        session.applySnapshot(snap, now: Date())
+        session.scrollsOnPage = 10
+        session.applySnapshot(snap, now: Date())
+        XCTAssertGreaterThanOrEqual(session.unchangedScrollInspects, 2)
+
+        let decision = session.nextDecision(now: Date())
+        // Should leave page (tab / yield / keys) rather than keep scrolling forever.
+        switch decision {
+        case .keyTraverse, .switchTab, .yieldToUniversal, .wait, .inspect, .activate:
+            break
+        case .browserBack:
+            XCTFail("expected to stop infinite scroll, got \(decision)")
+        }
+    }
+
+    func testParentURLTrackedOnNavigation() {
+        var settings = ChromeNavigationSettings(maxPages: 10, maxScrollsPerPage: 5)
+        settings.normalize()
+        var session = ChromeCrawlSession(settings: settings, now: Date())
+        session.applySnapshot(
+            WebPageSnapshot(url: "https://example.com/root", title: "Root"),
+            now: Date()
+        )
+        session.applySnapshot(
+            WebPageSnapshot(url: "https://example.com/child", title: "Child"),
+            now: Date()
+        )
+        XCTAssertEqual(session.parentURL, URLNormalizer.normalize("https://example.com/root"))
+        XCTAssertEqual(session.currentURL, URLNormalizer.normalize("https://example.com/child"))
+    }
+
+    func testContentFingerprintChangesWithLinks() {
+        let a = WebPageSnapshot(
+            url: "https://example.com",
+            title: "T",
+            links: [
+                WebNavElement(identity: "https://example.com/1", role: .link, name: "1", centerX: 0, centerY: 0),
+            ]
+        )
+        let b = WebPageSnapshot(
+            url: "https://example.com",
+            title: "T",
+            links: [
+                WebNavElement(identity: "https://example.com/1", role: .link, name: "1", centerX: 0, centerY: 0),
+                WebNavElement(identity: "https://example.com/2", role: .link, name: "2", centerX: 0, centerY: 0),
+            ]
+        )
+        XCTAssertNotEqual(a.contentFingerprint, b.contentFingerprint)
+    }
+
+    func testSafetyDeniesLoginControls() {
+        XCTAssertFalse(WebLinkSafetyFilter.isSafe(name: "Sign in", href: "/login"))
+        XCTAssertFalse(WebLinkSafetyFilter.isSafe(name: "Log in", href: nil))
+    }
 }

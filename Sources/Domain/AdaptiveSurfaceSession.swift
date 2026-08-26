@@ -43,14 +43,14 @@ public struct AdaptiveSurfaceSession: Equatable, Sendable {
         }
 
         // Long: lots of downward motion, still no end → grant more time (capped).
-        if downwardCount >= 11, boundaryCount == 0, extensionsUsed < 2 {
+        if downwardCount >= 8, boundaryCount == 0, extensionsUsed < 2 {
             endsAt = endsAt.addingTimeInterval(settings.randomFileDwellExtensionSeconds())
             extensionsUsed += 1
         }
 
         // Very long skim: second extension if still going deep.
-        if downwardCount >= 22, boundaryCount == 0, extensionsUsed < 3 {
-            endsAt = endsAt.addingTimeInterval(settings.randomFileDwellExtensionSeconds() * 0.7)
+        if downwardCount >= 16, boundaryCount == 0, extensionsUsed < 3 {
+            endsAt = endsAt.addingTimeInterval(settings.randomFileDwellExtensionSeconds() * 0.85)
             extensionsUsed += 1
         }
     }
@@ -80,7 +80,7 @@ public enum ContentPaceHint: Equatable, Sendable {
         if atBoundary || session.boundaryCount > 0 && session.downwardCount < 7 {
             return session.downwardCount < 7 ? .shortContent : .atEnd
         }
-        if session.downwardCount >= 11, session.boundaryCount == 0 {
+        if session.downwardCount >= 8, session.boundaryCount == 0 {
             return .longContent
         }
         return .reading

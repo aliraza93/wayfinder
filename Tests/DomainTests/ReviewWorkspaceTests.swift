@@ -336,7 +336,7 @@ final class ReviewWorkspaceTests: XCTestCase {
         let before = session.endsAt
         for _ in 0..<12 {
             session.observe(
-                action: .scroll(direction: .down, amount: 4),
+                action: .pageNavigate(.pageDown),
                 markedBoundary: false,
                 settings: settings,
                 now: now

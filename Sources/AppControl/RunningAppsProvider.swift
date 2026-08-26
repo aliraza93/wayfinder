@@ -16,17 +16,20 @@ public struct RunningAppInfo: Equatable, Sendable {
     public var activationPolicy: AppActivationPolicy
     /// True when this process is the frontmost application.
     public var isActive: Bool
+    public var processID: Int32?
 
     public init(
         bundleID: String?,
         displayName: String?,
         activationPolicy: AppActivationPolicy,
-        isActive: Bool
+        isActive: Bool,
+        processID: Int32? = nil
     ) {
         self.bundleID = bundleID
         self.displayName = displayName
         self.activationPolicy = activationPolicy
         self.isActive = isActive
+        self.processID = processID
     }
 }
 

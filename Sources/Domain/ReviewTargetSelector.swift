@@ -110,6 +110,10 @@ public struct ReviewSessionController: Sendable {
     private var maxSurfaceSwitchesBeforeAppChange: Int
     /// Smart Chrome crawl (nil when disabled or not on a browser target).
     public var chromeCrawl: ChromeCrawlSession?
+    /// Session visit counts + lifecycle by identity key.
+    public var visited: VisitedTargetTracker
+    /// Ordered lifecycle history for the dashboard / logs.
+    public var history: NavigationHistory
 
     public init(
         settings: ReviewWorkspaceSettings,
@@ -124,9 +128,10 @@ public struct ReviewSessionController: Sendable {
         self.index = 0
         self.dwellEndsAt = nil
         self.dwellStartedAt = nil
-        self.current = queue.first
+        // nil forces the first `nextPick` through `startTarget` (dwell + lifecycle).
+        self.current = nil
         self.targetsCompleted = 0
-        self.nextPreview = queue.count > 1 ? queue[1] : nil
+        self.nextPreview = queue.first
         self.crawlStepsOnTarget = 0
         self.enterPhase = .focusApp
         self.discoveryCounts = Self.countByKind(queue)
@@ -139,6 +144,17 @@ public struct ReviewSessionController: Sendable {
         self.surfaceSwitchesOnApp = 0
         self.maxSurfaceSwitchesBeforeAppChange = Self.plannedSurfaceSwitches(for: queue)
         self.chromeCrawl = nil
+        self.visited = .empty
+        self.history = NavigationHistory()
+        for target in queue {
+            let key = NavigationPlanner.identityKey(target)
+            visited.markPending(key)
+            history.record(
+                identityKey: key,
+                displayName: target.identity,
+                lifecycle: .pending
+            )
+        }
     }
 
     /// True when the engine should refresh the accessible page snapshot before the next pick.
@@ -152,7 +168,29 @@ public struct ReviewSessionController: Sendable {
         if chromeCrawl == nil, settings.chrome.enabled {
             chromeCrawl = ChromeCrawlSession(settings: settings.chrome, now: now)
         }
-        chromeCrawl?.applySnapshot(snapshot, now: now)
+        guard var session = chromeCrawl else { return }
+        session.applySnapshot(snapshot, now: now)
+        let groups = snapshot.tabs.compactMap { tab -> ChromeTabGroup? in
+            guard tab.name.hasPrefix("Tab group: ") else { return nil }
+            let title = String(tab.name.dropFirst("Tab group: ".count))
+            return ChromeTabGroup(id: tab.identity, title: title)
+        }
+        if !groups.isEmpty {
+            session.tabGroups = groups
+        }
+        chromeCrawl = session
+        // Long GitHub/docs pages: stretch the current surface + app dwell.
+        if session.pageReadWeight >= 0.7 {
+            extendDwellForPageWeight(now: now)
+            if surfaceSession == nil {
+                beginSurfaceSession(now: now)
+            } else if var surface = surfaceSession {
+                let extra = settings.randomFileDwellSeconds(distinctAppCount: distinctAppCount())
+                    * (session.pageReadWeight - 0.4)
+                surface.endsAt = surface.endsAt.addingTimeInterval(max(2, extra))
+                surfaceSession = surface
+            }
+        }
     }
 
     public var dwellAllocatedSeconds: Double? {
@@ -188,6 +226,7 @@ public struct ReviewSessionController: Sendable {
         }
 
         if let end = dwellEndsAt, now >= end {
+            markCurrentCompleted(at: now)
             targetsCompleted += 1
             completedIdentity = current?.identity
             recordMetaCompleted = true
@@ -205,9 +244,7 @@ public struct ReviewSessionController: Sendable {
             let nextIndex = index + 1
             if nextIndex >= queue.count {
                 if settings.loopTargets {
-                    if settings.targetOrder == .random {
-                        queue = NavigationPlanner.interleaveByAppClass(queue.shuffled())
-                    }
+                    reorderQueueForLoop()
                     return startTarget(at: 0, now: now)
                 }
                 return nil
@@ -282,15 +319,38 @@ public struct ReviewSessionController: Sendable {
         workflowTargets: [TargetApp]
     ) {
         pendingRefresh = false
+        let previousKeys = Set(queue.map(NavigationPlanner.identityKey))
         queue = NavigationPlanner.refreshQueue(
             current: current,
             remainingFromIndex: index,
             previous: queue,
             settings: settings,
             discovered: discovered,
-            workflowTargets: workflowTargets
+            workflowTargets: workflowTargets,
+            visited: visited
         )
         discoveryCounts = Self.countByKind(queue)
+        let nextKeys = Set(queue.map(NavigationPlanner.identityKey))
+        for key in previousKeys.subtracting(nextKeys) {
+            if key == current.map(NavigationPlanner.identityKey) { continue }
+            visited.markSkipped(key)
+            history.record(
+                identityKey: key,
+                displayName: key,
+                lifecycle: .skipped
+            )
+        }
+        for target in queue {
+            let key = NavigationPlanner.identityKey(target)
+            if !previousKeys.contains(key) {
+                visited.markPending(key)
+                history.record(
+                    identityKey: key,
+                    displayName: target.identity,
+                    lifecycle: .pending
+                )
+            }
+        }
         if let current, let newIndex = queue.firstIndex(of: current) {
             index = newIndex
         }
@@ -315,15 +375,22 @@ public struct ReviewSessionController: Sendable {
         let upcoming = (safe + 1) % queue.count
         nextPreview = queue.count > 1 ? queue[upcoming] : nil
         if settings.chrome.enabled, appClass(of: queue[safe]) == .browser {
-            chromeCrawl = ChromeCrawlSession(settings: settings.chrome, now: now)
-        } else {
-            chromeCrawl = nil
+            // Preserve visited files/tabs across Chrome dwells in the same run.
+            if var existing = chromeCrawl {
+                existing.prepareForNewBrowserDwell(now: now)
+                chromeCrawl = existing
+            } else {
+                chromeCrawl = ChromeCrawlSession(settings: settings.chrome, now: now)
+            }
         }
+        // Keep chromeCrawl memory when rotating to Cursor/etc. so return visits stay fresh.
+        markCurrentActive(at: now)
         return focusAppPick()
     }
 
     /// Leave the current target immediately (e.g. Chrome activate failed — don't keep crawling Cursor).
     public mutating func abandonCurrentTarget(now: Date) {
+        markCurrentSkipped(at: now)
         targetsCompleted += 1
         completedIdentity = current?.identity
         recordMetaCompleted = true
@@ -338,9 +405,7 @@ public struct ReviewSessionController: Sendable {
         } else if index + 1 < queue.count {
             nextIdx = index + 1
         } else if settings.loopTargets {
-            if settings.targetOrder == .random {
-                queue = NavigationPlanner.interleaveByAppClass(queue.shuffled())
-            }
+            reorderQueueForLoop()
             nextIdx = 0
         } else {
             nextIdx = nil
@@ -351,20 +416,12 @@ public struct ReviewSessionController: Sendable {
             dwellEndsAt = nil
             return
         }
-        index = nextIdx
-        current = queue[nextIdx]
-        enterPhase = .focusApp
-        surfaceSwitchesOnApp = 0
-        maxSurfaceSwitchesBeforeAppChange = Self.plannedSurfaceSwitches(for: queue)
-        let dwell = settings.smartAppDwellSeconds(distinctAppCount: distinctAppCount())
-        dwellStartedAt = now
-        dwellEndsAt = now.addingTimeInterval(dwell)
-        let upcoming = (nextIdx + 1) % queue.count
-        nextPreview = queue.count > 1 ? queue[upcoming] : nil
+        _ = startTarget(at: nextIdx, now: now)
     }
 
     /// Leave current dwell early (e.g. after End) and move to another target/file.
     private mutating func completeTargetEarly(now: Date, reasonAction: ActionKind) -> TimedReviewPick {
+        markCurrentCompleted(at: now)
         targetsCompleted += 1
         completedIdentity = current?.identity
         recordMetaCompleted = true
@@ -384,9 +441,7 @@ public struct ReviewSessionController: Sendable {
         let nextIndex = index + 1
         if nextIndex >= queue.count {
             if settings.loopTargets {
-                if settings.targetOrder == .random {
-                    queue = NavigationPlanner.interleaveByAppClass(queue.shuffled())
-                }
+                reorderQueueForLoop()
                 return startTarget(at: 0, now: now)
             }
             return TimedReviewPick(
@@ -400,6 +455,49 @@ public struct ReviewSessionController: Sendable {
             return startTarget(at: preferred, now: now)
         }
         return startTarget(at: nextIndex, now: now)
+    }
+
+    private mutating func markCurrentCompleted(at now: Date) {
+        guard let current else { return }
+        let key = NavigationPlanner.identityKey(current)
+        visited.markCompleted(key, at: now)
+        history.record(
+            identityKey: key,
+            displayName: current.identity,
+            lifecycle: .completed,
+            at: now
+        )
+    }
+
+    private mutating func markCurrentSkipped(at now: Date) {
+        guard let current else { return }
+        let key = NavigationPlanner.identityKey(current)
+        visited.markSkipped(key)
+        history.record(
+            identityKey: key,
+            displayName: current.identity,
+            lifecycle: .skipped,
+            at: now
+        )
+    }
+
+    private mutating func markCurrentActive(at now: Date) {
+        guard let current else { return }
+        let key = NavigationPlanner.identityKey(current)
+        visited.markActive(key, at: now)
+        history.record(
+            identityKey: key,
+            displayName: current.identity,
+            lifecycle: .active,
+            at: now
+        )
+    }
+
+    private mutating func reorderQueueForLoop() {
+        queue = NavigationPlanner.orderQueue(queue, settings: settings, visited: visited)
+        if let current, let newIndex = queue.firstIndex(of: current) {
+            index = newIndex
+        }
     }
 
     /// Prefer the next target of a different app class (e.g. Chrome after Cursor).
@@ -580,18 +678,32 @@ public struct ReviewSessionController: Sendable {
                 metaKind: "webNavActivated",
                 identity: identity
             )
-        case .scroll(let direction, let amount):
+        case .keyTraverse(let motion):
+            let action = motion.asAction
+            if motion.isDownward {
+                consecutiveDown += 1
+            } else {
+                consecutiveDown = max(0, consecutiveDown - 1)
+            }
+            surfaceSession?.observe(
+                action: action,
+                markedBoundary: false,
+                settings: settings,
+                now: now
+            )
+            extendDwellForPageWeight(now: now)
             return TimedReviewPick(
-                action: .scroll(direction: direction, amount: amount),
+                action: action,
                 gapSeconds: settings.actionIntervalSeconds,
-                metaKind: "webScroll",
+                metaKind: "webKeyTraverse",
                 identity: chromeCrawl?.currentURL
             )
         case .browserBack:
+            // Architectural refusal: never drive Chrome history Back.
             return TimedReviewPick(
-                action: .browserBack,
-                gapSeconds: max(0.5, settings.actionIntervalSeconds),
-                metaKind: "browserBack",
+                action: .wait(seconds: 0.2),
+                gapSeconds: 0.05,
+                metaKind: "browserBackRefused",
                 identity: chromeCrawl?.currentURL
             )
         case .switchTab(let direction):
@@ -621,10 +733,30 @@ public struct ReviewSessionController: Sendable {
     private mutating func beginSurfaceSession(now: Date) {
         atBoundary = false
         consecutiveDown = 0
-        surfaceSession = AdaptiveSurfaceSession(
-            now: now,
-            durationSeconds: settings.randomFileDwellSeconds(distinctAppCount: distinctAppCount())
+        let weight = chromeCrawl?.pageReadWeight ?? 0.4
+        let base = settings.randomFileDwellSeconds(distinctAppCount: distinctAppCount())
+        let scaled = min(
+            settings.dwellMaxSeconds,
+            max(settings.dwellMinSeconds * 0.35, base * (0.65 + weight))
         )
+        surfaceSession = AdaptiveSurfaceSession(now: now, durationSeconds: scaled)
+    }
+
+    /// Longer pages/files keep the app dwell open intelligently (capped).
+    private mutating func extendDwellForPageWeight(now: Date) {
+        let weight = chromeCrawl?.pageReadWeight ?? 0.4
+        guard weight >= 0.7, let end = dwellEndsAt else { return }
+        let remaining = end.timeIntervalSince(now)
+        // Only extend when the dwell would otherwise end soon while still reading.
+        guard remaining < 8 else { return }
+        let extra = settings.randomFileDwellExtensionSeconds() * min(1.4, weight)
+        let cappedEnd = (dwellStartedAt ?? now).addingTimeInterval(settings.dwellMaxSeconds)
+        let proposed = now.addingTimeInterval(remaining + extra)
+        dwellEndsAt = min(proposed, cappedEnd)
+        if var session = surfaceSession, !session.isExpired(at: now) {
+            session.endsAt = max(session.endsAt, now.addingTimeInterval(extra * 0.8))
+            surfaceSession = session
+        }
     }
 
     private func shouldRotateToAlternateApp() -> Bool {

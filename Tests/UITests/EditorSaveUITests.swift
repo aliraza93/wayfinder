@@ -11,14 +11,14 @@ final class EditorSaveUITests: XCTestCase {
         app.launchArguments = ["-uitesting"]
         app.launch()
 
-        let host = app.windows["Waypoint UITest Host"]
+        let host = app.windows["Tiktik Ghora UITest Host"]
         XCTAssertTrue(host.waitForExistence(timeout: 10), "UITest host should open")
 
         let openEditor = host.buttons["uitest.openEditor"]
         XCTAssertTrue(openEditor.waitForExistence(timeout: 5))
         openEditor.click()
 
-        let editor = app.windows["Workflow Editor"]
+        let editor = app.windows["Workflow Editor — Tiktik Ghora"]
         XCTAssertTrue(editor.waitForExistence(timeout: 8), "Workflow Editor should open")
 
         let nameField = editor.textFields["editor.name"]

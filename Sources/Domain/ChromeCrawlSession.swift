@@ -4,12 +4,42 @@ import Foundation
 public enum ChromeCrawlDecision: Equatable, Sendable {
     case inspect
     case activate(identity: String, x: Double, y: Double)
-    case scroll(direction: ScrollDirection, amount: Int)
+    /// Keyboard-only page traversal (never scroll-wheel).
+    case keyTraverse(ChromeReadMotion)
+    /// Deprecated for Chrome: never mapped to Cmd+[ / toolbar Back.
     case browserBack
     case switchTab(direction: WindowDirection)
     case wait(seconds: Double)
     /// Hand control back to the universal progressive crawler / next app.
     case yieldToUniversal
+}
+
+/// Inert keyboard motions used to read page/file content.
+public enum ChromeReadMotion: Equatable, Sendable {
+    case pageDown
+    case pageUp
+    case arrowDown(presses: Int)
+    case arrowUp(presses: Int)
+
+    public var asAction: ActionKind {
+        switch self {
+        case .pageDown:
+            return .pageNavigate(.pageDown)
+        case .pageUp:
+            return .pageNavigate(.pageUp)
+        case .arrowDown(let presses):
+            return .arrowNavigate(direction: .down, presses: max(1, presses), intervalSeconds: 0)
+        case .arrowUp(let presses):
+            return .arrowNavigate(direction: .up, presses: max(1, presses), intervalSeconds: 0)
+        }
+    }
+
+    public var isDownward: Bool {
+        switch self {
+        case .pageDown, .arrowDown: return true
+        case .pageUp, .arrowUp: return false
+        }
+    }
 }
 
 /// Injected live page inspection. Accessibility implements; Domain stays pure.
@@ -32,15 +62,50 @@ public struct ChromeCrawlSession: Sendable {
     public var history: [String]
     public var pending: [WebNavCandidate]
     public var currentURL: String
+    /// Parent of the current URL in the crawl stack (empty at root).
+    public var parentURL: String
     public var currentDepth: Int
     public var pagesVisited: Int
     public var scrollsOnPage: Int
     public var pageStartedAt: Date?
     public var lastSnapshot: WebPageSnapshot?
+    public var lastContentFingerprint: String
+    /// Consecutive inspects where fingerprint did not change after scroll (infinite-scroll end).
+    public var unchangedScrollInspects: Int
     public var needsInspect: Bool
     public var readingSource: Bool
+    /// How many Ctrl+Tab hops attempted while hunting for a fresh tab.
+    public var tabSwitchesAttempted: Int
+    /// Max Ctrl+Tab hops per workspace before yielding.
+    public var maxTabSwitches: Int
+    /// Stable keys for tabs/pages already reviewed this run.
+    public var visitedTabKeys: Set<String>
+    /// Keys activated this run (including name-only file targets).
+    public var visitedTargetKeys: Set<String>
+    /// Pending activate whose URL we expect after the next inspect.
+    public var awaitingNavigationTo: String?
+    /// Consecutive activations that did not change the page URL.
+    public var stuckActivationCount: Int
+    /// Discovered tab groups for this Chrome workspace (read-only; never mutated).
+    public var tabGroups: [ChromeTabGroup]
+    /// Last explorer intent (for debug / preview).
+    public var lastIntent: ChromeNavigationIntent
+    public var explorerState: ChromeExplorerState
+    public var lastRejection: String
+    /// 0...1+ heuristic of how long this page needs (never from body text).
+    public var pageReadWeight: Double
+    /// Key-traverse budget for the current page (scales with weight).
+    public var pageKeyBudget: Int
+    /// Soft max seconds for the current page (scales with weight).
+    public var pageTimeBudgetSeconds: Double
     /// BFS queue vs DFS stack controlled by strategy when enqueueing.
     private var pendingIsStack: Bool
+    /// Max key moves while reviewing a source file / long article before seeking next nav target.
+    private static let minSourceReviewKeys = 4
+    private static let maxSourceReviewKeys = 18
+    /// Reveal key moves when no candidates — keep bounded to force tab/file variety.
+    private static let minRevealKeys = 2
+    private static let maxRevealKeys = 8
 
     public init(settings: ChromeNavigationSettings, now: Date = Date()) {
         var normalized = settings
@@ -50,111 +115,297 @@ public struct ChromeCrawlSession: Sendable {
         self.history = []
         self.pending = []
         self.currentURL = ""
+        self.parentURL = ""
         self.currentDepth = 0
         self.pagesVisited = 0
         self.scrollsOnPage = 0
         self.pageStartedAt = now
         self.lastSnapshot = nil
+        self.lastContentFingerprint = ""
+        self.unchangedScrollInspects = 0
         self.needsInspect = true
         self.readingSource = false
+        self.tabSwitchesAttempted = 0
+        self.maxTabSwitches = 12
+        self.visitedTabKeys = []
+        self.visitedTargetKeys = []
+        self.awaitingNavigationTo = nil
+        self.stuckActivationCount = 0
+        self.tabGroups = []
+        self.lastIntent = .inspect
+        self.explorerState = .idle
+        self.lastRejection = ""
+        self.pageReadWeight = 0.4
+        self.pageKeyBudget = Self.minRevealKeys
+        self.pageTimeBudgetSeconds = normalized.maxTimePerPageSeconds
         self.pendingIsStack = normalized.githubStrategy == .depthFirst
+    }
+
+    /// Soft reset when returning to Chrome mid-run — keep visited memory, clear page-local work.
+    public mutating func prepareForNewBrowserDwell(now: Date) {
+        pending = []
+        lastSnapshot = nil
+        lastContentFingerprint = ""
+        unchangedScrollInspects = 0
+        scrollsOnPage = 0
+        needsInspect = true
+        readingSource = false
+        awaitingNavigationTo = nil
+        stuckActivationCount = 0
+        pageStartedAt = now
+        pageReadWeight = 0.4
+        pageKeyBudget = Self.minRevealKeys
+        pageTimeBudgetSeconds = settings.maxTimePerPageSeconds
+        // Allow more tab hops in this dwell; do not clear visitedTabKeys / visitedURLs.
+        tabSwitchesAttempted = 0
+        explorerState = .discoveringWorkspace
+        lastIntent = .inspect
     }
 
     public mutating func markNeedsInspect() {
         needsInspect = true
+        explorerState = .inspectingPage
     }
 
     public mutating func applySnapshot(_ snapshot: WebPageSnapshot, now: Date) {
         needsInspect = false
+        explorerState = .buildingNavigationTargets
         var snap = snapshot
         if snap.kind == .generic {
             snap.kind = GitHubURLParser.pageKind(for: snap.url)
         }
+        if snap.kind == .generic, snap.looksLikeDocumentation {
+            snap.kind = .documentation
+        }
+
+        // Adapt scoring profile from page type unless the user chose custom.
+        settings.profile = WebPageStrategySelector.adaptedProfile(for: snap.kind, current: settings.profile)
+        if snap.kind == .githubRepoRoot || snap.kind == .githubTree || snap.kind == .githubBlob {
+            settings.crawlRepositoryDirectories = true
+            settings.crawlSourceFiles = true
+        }
+        if snap.kind == .documentation || snap.looksLikeDocumentation {
+            settings.crawlDocumentation = true
+        }
+
+        let fingerprint = snap.contentFingerprint
+        if !lastContentFingerprint.isEmpty,
+           fingerprint == lastContentFingerprint,
+           scrollsOnPage > 0
+        {
+            unchangedScrollInspects += 1
+        } else if fingerprint != lastContentFingerprint {
+            unchangedScrollInspects = 0
+        }
+        lastContentFingerprint = fingerprint
         lastSnapshot = snap
+        refreshReadBudgets(for: snap)
+
         let normalizedURL = URLNormalizer.normalize(snap.url)
-        if !normalizedURL.isEmpty, normalizedURL != currentURL {
-            if !currentURL.isEmpty {
-                history.append(currentURL)
+        let tabKey = ChromeVisitKey.forPage(url: normalizedURL, title: snap.title)
+        let previousURL = currentURL
+        let urlChanged = !normalizedURL.isEmpty && normalizedURL != previousURL
+
+        if let expected = awaitingNavigationTo {
+            let expectedHit = !expected.isEmpty && (
+                expected == normalizedURL
+                    || (!tabKey.isEmpty && expected == tabKey)
+                    || (!normalizedURL.isEmpty && normalizedURL.contains(expected.replacingOccurrences(of: "name:", with: "")))
+            )
+            if urlChanged || expectedHit {
+                stuckActivationCount = 0
+            } else if !previousURL.isEmpty {
+                // Click did not leave the page — burn the target and prefer something else.
+                stuckActivationCount += 1
+                visitedTargetKeys.insert(expected)
+                lastRejection = "Activation did not change page — skipped \(expected)"
+            }
+            awaitingNavigationTo = nil
+        }
+
+        if urlChanged {
+            if !previousURL.isEmpty {
+                history.append(previousURL)
+                parentURL = previousURL
+            } else {
+                parentURL = ""
             }
             currentURL = normalizedURL
             currentDepth = history.count
             pagesVisited += 1
             scrollsOnPage = 0
             pageStartedAt = now
-            if !normalizedURL.isEmpty {
-                visitedURLs.insert(normalizedURL)
+            unchangedScrollInspects = 0
+            visitedURLs.insert(normalizedURL)
+            if !tabKey.isEmpty {
+                visitedTabKeys.insert(tabKey)
             }
             readingSource = snap.kind == .githubBlob
                 || GitHubURLParser.isSourceFilePath(normalizedURL)
+            // Drop stale pending from the previous page — rebuild from this snapshot.
+            pending = []
+        } else if currentURL.isEmpty, !normalizedURL.isEmpty {
+            currentURL = normalizedURL
+            pagesVisited = max(1, pagesVisited)
+            visitedURLs.insert(normalizedURL)
+            if !tabKey.isEmpty {
+                visitedTabKeys.insert(tabKey)
+            }
+            readingSource = snap.kind == .githubBlob
+                || GitHubURLParser.isSourceFilePath(normalizedURL)
+        } else if !tabKey.isEmpty {
+            visitedTabKeys.insert(tabKey)
         }
+
+        // Already fully reviewed this tab earlier in the run → do not re-scroll it.
+        // (First landing still enqueues; subsequent returns prefer switching away.)
+        let revisitingKnownTab = !tabKey.isEmpty
+            && visitedTabKeys.contains(tabKey)
+            && !urlChanged
+            && pagesVisited > 1
+            && pending.isEmpty
+            && scrollsOnPage == 0
 
         let ranked = WebLinkScorer.rankedCandidates(
             snapshot: snap,
             settings: settings,
-            visited: visitedURLs,
+            visited: visitedURLs.union(visitedTargetKeys),
             depth: currentDepth + 1
         )
         enqueue(ranked)
+
+        if revisitingKnownTab, pending.isEmpty {
+            lastRejection = "Already reviewed tab — switching"
+        }
+
+        explorerState = .selectingTarget
+    }
+
+    /// Ordered preview of what the crawler intends to explore (no side effects).
+    public func previewNavigation(limit: Int = 20) -> [String] {
+        let ranked = pending.sorted { $0.priority > $1.priority }
+        return Array(ranked.prefix(limit).map { candidate in
+            let label = candidate.element.name.isEmpty
+                ? (candidate.element.href ?? candidate.element.identity)
+                : candidate.element.name
+            return "\(candidate.typeLabel): \(label)"
+        })
+    }
+
+    public func debugSnapshot() -> ChromeExplorerDebugSnapshot {
+        let snap = lastSnapshot
+        let all = snap?.allCandidates ?? []
+        let safe = pending.count
+        let blocked = max(0, all.count - safe)
+        let next = pending.first.map { c in
+            c.element.name.isEmpty ? (c.element.href ?? c.element.identity) : c.element.name
+        } ?? ""
+        return ChromeExplorerDebugSnapshot(
+            state: explorerState,
+            currentURL: currentURL,
+            pageType: snap?.kind ?? .generic,
+            intent: lastIntent,
+            discoveredCount: all.count,
+            safeCount: safe,
+            blockedCount: blocked,
+            nextTarget: next,
+            lastRejection: lastRejection,
+            tabGroupCount: tabGroups.count
+        )
     }
 
     public mutating func nextDecision(now: Date) -> ChromeCrawlDecision {
         if needsInspect || lastSnapshot == nil {
+            lastIntent = .inspect
+            explorerState = .inspectingPage
             return .inspect
         }
 
         if pagesVisited > settings.maxPages {
+            lastIntent = .skip
+            explorerState = .completed
             return .yieldToUniversal
         }
 
+        if stuckActivationCount >= 2 {
+            lastRejection = "Repeated stuck activations — leaving page"
+            return advanceAfterPageBudget()
+        }
+
         if let started = pageStartedAt,
-           now.timeIntervalSince(started) >= settings.maxTimePerPageSeconds
+           now.timeIntervalSince(started) >= pageTimeBudgetSeconds
         {
             return advanceAfterPageBudget()
         }
 
-        if scrollsOnPage >= settings.maxScrollsPerPage {
+        if scrollsOnPage >= max(pageKeyBudget, settings.maxScrollsPerPage) {
             return advanceAfterPageBudget()
         }
 
-        // Source / long article: prefer reading before hopping.
-        if readingSource, scrollsOnPage < min(12, settings.maxScrollsPerPage / 2) {
-            scrollsOnPage += 1
-            return .scroll(direction: .down, amount: Int.random(in: 3...6))
+        // Infinite scroll ended: scroll → wait → inspect found no new content.
+        if unchangedScrollInspects >= 2 {
+            return advanceAfterPageBudget()
         }
 
+        // Already reviewed this page and nothing new remains → switch tab / yield.
+        if pending.isEmpty,
+           let snap = lastSnapshot,
+           !ChromeVisitKey.forPage(url: snap.url, title: snap.title).isEmpty,
+           visitedTargetKeys.isEmpty == false || visitedURLs.count > 1,
+           scrollsOnPage >= max(Self.minRevealKeys, pageKeyBudget / 2)
+        {
+            return advanceAfterPageBudget()
+        }
+
+        // 1) Navigate first — never key-traverse while unvisited targets remain.
         if let snap = lastSnapshot, !snap.isEmpty {
-            // Prefer pagination when reading docs and pending is thin.
-            if settings.crawlDocumentation || settings.profile == .documentation {
-                if let nextPage = snap.pagination.first(where: {
-                    WebLinkSafetyFilter.isSafe(name: $0.name, href: $0.href)
-                        && ($0.name.lowercased().contains("next") || $0.name.lowercased().contains("more"))
-                }) {
-                    let id = URLNormalizer.normalize(nextPage.href ?? nextPage.identity)
-                    if !id.isEmpty, !visitedURLs.contains(id), currentDepth < settings.maxDepth {
-                        visitedURLs.insert(id)
-                        return .activate(identity: id, x: nextPage.centerX, y: nextPage.centerY)
+            if let next = dequeueNext() {
+                return activateCandidate(next, pageKind: snap.kind)
+            }
+
+            // 2) Pagination only when the page has no higher-priority pending targets.
+            let preferPagination = settings.crawlDocumentation
+                || settings.profile == .documentation
+                || snap.looksLikeDocumentation
+            if preferPagination {
+                if let nextPage = preferredPagination(in: snap) {
+                    let key = ChromeVisitKey.forElement(nextPage)
+                    if !key.isEmpty, !hasVisited(key), currentDepth < settings.maxDepth {
+                        return activateElement(nextPage, intent: .openPagination)
                     }
                 }
             }
-
-            if let next = dequeueNext() {
-                visitedURLs.insert(URLNormalizer.normalize(next.element.href ?? next.element.identity))
-                return .activate(
-                    identity: next.element.identity,
-                    x: next.element.centerX,
-                    y: next.element.centerY
-                )
-            }
         }
 
-        // Keep scrolling to reveal infinite-scroll / more links, then reinspect.
-        if scrollsOnPage < settings.maxScrollsPerPage {
+        // 3) Source / article review via keys — only after navigation queue is empty.
+        let sourceBudget = sourceReviewKeyBudget()
+        if readingSource, scrollsOnPage < sourceBudget {
             scrollsOnPage += 1
-            if scrollsOnPage % 5 == 0 {
+            lastIntent = .scroll
+            explorerState = .reviewingContent
+            if scrollsOnPage % 2 == 0 {
                 needsInspect = true
-                return .wait(seconds: 0.45)
             }
-            return .scroll(direction: .down, amount: Int.random(in: 2...5))
+            return .keyTraverse(nextReadMotion(preferPage: scrollsOnPage % 3 != 0))
+        }
+
+        // Finished reading a source file with no siblings left → change file/tab.
+        if readingSource {
+            return advanceAfterPageBudget()
+        }
+
+        // 4) Brief key reveal, then leave for another tab/file — avoid repetitive loops.
+        let revealBudget = revealKeyBudget()
+        if scrollsOnPage < revealBudget {
+            scrollsOnPage += 1
+            lastIntent = .scroll
+            explorerState = .scrollingContent
+            if scrollsOnPage % 2 == 0 {
+                needsInspect = true
+                explorerState = .discoveringMore
+                return .wait(seconds: 0.35)
+            }
+            return .keyTraverse(nextReadMotion(preferPage: true))
         }
 
         return advanceAfterPageBudget()
@@ -164,33 +415,147 @@ public struct ChromeCrawlSession: Sendable {
         needsInspect = true
         readingSource = false
         scrollsOnPage = 0
+        unchangedScrollInspects = 0
         pageStartedAt = Date()
+        explorerState = .inspectingPage
+    }
+
+    private mutating func refreshReadBudgets(for snap: WebPageSnapshot) {
+        pageReadWeight = snap.estimatedReadWeight
+        let baseTime = settings.maxTimePerPageSeconds
+        pageTimeBudgetSeconds = min(1_800, max(20, baseTime * (0.55 + pageReadWeight)))
+        if readingSource || snap.kind == .githubBlob {
+            pageKeyBudget = Int(
+                (Double(Self.minSourceReviewKeys)
+                    + pageReadWeight * Double(Self.maxSourceReviewKeys - Self.minSourceReviewKeys)).rounded()
+            )
+        } else {
+            pageKeyBudget = Int(
+                (Double(Self.minRevealKeys)
+                    + pageReadWeight * Double(Self.maxRevealKeys - Self.minRevealKeys)).rounded()
+            )
+        }
+        pageKeyBudget = min(settings.maxScrollsPerPage, max(Self.minRevealKeys, pageKeyBudget))
+    }
+
+    private func sourceReviewKeyBudget() -> Int {
+        min(settings.maxScrollsPerPage, max(Self.minSourceReviewKeys, pageKeyBudget))
+    }
+
+    private func revealKeyBudget() -> Int {
+        min(settings.maxScrollsPerPage, max(Self.minRevealKeys, pageKeyBudget))
+    }
+
+    private func nextReadMotion(preferPage: Bool) -> ChromeReadMotion {
+        if preferPage {
+            return Bool.random() ? .pageDown : .arrowDown(presses: Int.random(in: 2...5))
+        }
+        return .arrowDown(presses: Int.random(in: 1...3))
+    }
+
+    private mutating func activateCandidate(
+        _ next: WebNavCandidate,
+        pageKind: WebPageKind
+    ) -> ChromeCrawlDecision {
+        markVisitedElement(next.element)
+        awaitingNavigationTo = next.visitKey
+        lastIntent = WebPageStrategySelector.intent(for: next, pageKind: pageKind)
+        explorerState = .navigating
+        return .activate(
+            identity: next.element.identity,
+            x: next.element.centerX,
+            y: next.element.centerY
+        )
+    }
+
+    private mutating func activateElement(
+        _ element: WebNavElement,
+        intent: ChromeNavigationIntent
+    ) -> ChromeCrawlDecision {
+        markVisitedElement(element)
+        awaitingNavigationTo = ChromeVisitKey.forElement(element)
+        lastIntent = intent
+        explorerState = .navigating
+        return .activate(
+            identity: element.identity,
+            x: element.centerX,
+            y: element.centerY
+        )
+    }
+
+    private mutating func markVisitedElement(_ element: WebNavElement) {
+        markVisited(ChromeVisitKey.forElement(element))
+        if let href = element.href {
+            let normalized = URLNormalizer.normalize(href)
+            if !normalized.isEmpty {
+                visitedURLs.insert(normalized)
+                visitedTargetKeys.insert(normalized)
+            }
+        }
+        let name = element.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !name.isEmpty, GitHubURLParser.isSourceFilePath(name) || name.hasSuffix("/") {
+            visitedTargetKeys.insert("name:\(name)")
+        }
+    }
+
+    private mutating func markVisited(_ key: String) {
+        guard !key.isEmpty else { return }
+        visitedTargetKeys.insert(key)
+        if key.contains("://") {
+            visitedURLs.insert(URLNormalizer.normalize(key))
+        }
+    }
+
+    private func hasVisited(_ key: String) -> Bool {
+        if key.isEmpty { return false }
+        if visitedTargetKeys.contains(key) { return true }
+        if visitedURLs.contains(key) { return true }
+        let normalized = URLNormalizer.normalize(key)
+        return !normalized.isEmpty && visitedURLs.contains(normalized)
+    }
+
+    private func preferredPagination(in snap: WebPageSnapshot) -> WebNavElement? {
+        let ranked = snap.pagination.filter {
+            $0.surface == .pageContent
+                && WebLinkSafetyFilter.isActivatable(
+                    element: $0,
+                    currentURL: snap.url,
+                    policy: settings.domainPolicy
+                )
+                && !hasVisited(ChromeVisitKey.forElement($0))
+        }
+        let nextish = ranked.first {
+            let n = $0.name.lowercased()
+            return n.contains("next") || n.contains("more") || n.contains("→") || n.contains("›")
+        }
+        return nextish ?? ranked.first
     }
 
     private mutating func advanceAfterPageBudget() -> ChromeCrawlDecision {
         if let next = dequeueNext() {
-            visitedURLs.insert(URLNormalizer.normalize(next.element.href ?? next.element.identity))
-            return .activate(
-                identity: next.element.identity,
-                x: next.element.centerX,
-                y: next.element.centerY
-            )
+            let snapKind = lastSnapshot?.kind ?? .generic
+            return activateCandidate(next, pageKind: snapKind)
         }
-        if history.count >= 1, currentDepth > 0 {
-            if let last = history.popLast() {
-                currentURL = last
-                currentDepth = max(0, currentDepth - 1)
-                needsInspect = true
-                readingSource = false
-                scrollsOnPage = 0
-                return .browserBack
-            }
+        // Never use Chrome Back / Forward / toolbar. Hunt for another existing tab.
+        if tabSwitchesAttempted < maxTabSwitches, pagesVisited < settings.maxPages {
+            tabSwitchesAttempted += 1
+            needsInspect = true
+            scrollsOnPage = 0
+            unchangedScrollInspects = 0
+            readingSource = false
+            pending = []
+            lastIntent = .switchExistingTab
+            explorerState = .discoveringTabs
+            return .switchTab(direction: .next)
         }
+        lastIntent = .skip
+        explorerState = .completed
         return .yieldToUniversal
     }
 
     private mutating func enqueue(_ candidates: [WebNavCandidate]) {
         let filtered = candidates.filter { candidate in
+            if hasVisited(candidate.visitKey) { return false }
             if !settings.crawlIssues, candidate.typeLabel == "link",
                (candidate.element.href ?? "").contains("/issues")
             {
@@ -198,18 +563,29 @@ public struct ChromeCrawlSession: Sendable {
             }
             if candidate.typeLabel == "sourceFile", !settings.crawlSourceFiles { return false }
             if candidate.typeLabel == "directory", !settings.crawlRepositoryDirectories { return false }
+            if candidate.element.role == .heading,
+               settings.profile == .generalWebsite,
+               !settings.crawlDocumentation
+            {
+                return false
+            }
             return true
         }
-        let existing = Set(pending.map(\.element.identity))
-        let fresh = filtered.filter { !existing.contains($0.element.identity) }
-        if pendingIsStack {
-            // DFS: high priority first onto stack (append = top).
-            pending.append(contentsOf: fresh.reversed())
-        } else {
-            // BFS: append to queue.
-            pending.append(contentsOf: fresh)
+        let existingKeys = Set(pending.map(\.visitKey))
+        let existingIdentities = Set(pending.map(\.element.identity))
+        let fresh = filtered.filter {
+            !existingKeys.contains($0.visitKey) && !existingIdentities.contains($0.element.identity)
         }
-        // Cap pending to avoid unbounded growth.
+        // Prefer unvisited source files / directories first for variety.
+        let ordered = fresh.sorted { lhs, rhs in
+            if lhs.priority != rhs.priority { return lhs.priority > rhs.priority }
+            return lhs.visitKey < rhs.visitKey
+        }
+        if pendingIsStack {
+            pending.append(contentsOf: ordered.reversed())
+        } else {
+            pending.append(contentsOf: ordered)
+        }
         if pending.count > settings.maxPages * 3 {
             pending = Array(pending.prefix(settings.maxPages * 3))
         }
@@ -223,9 +599,19 @@ public struct ChromeCrawlSession: Sendable {
             } else {
                 next = pending.removeFirst()
             }
-            let id = URLNormalizer.normalize(next.element.href ?? next.element.identity)
-            if visitedURLs.contains(id) || visitedURLs.contains(next.element.identity) {
+            let key = next.visitKey
+            if hasVisited(key) {
+                lastRejection = "Already visited \(key)"
                 continue
+            }
+            // Skip links that only point back at the current page.
+            if let href = next.element.href {
+                let normalized = URLNormalizer.normalize(href)
+                if !normalized.isEmpty, normalized == currentURL {
+                    markVisited(key)
+                    lastRejection = "Same-page link skipped"
+                    continue
+                }
             }
             if next.depth > settings.maxDepth { continue }
             return next

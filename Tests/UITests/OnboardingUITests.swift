@@ -12,14 +12,14 @@ final class OnboardingUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(
-            app.staticTexts["Welcome to Waypoint"].waitForExistence(timeout: 10),
+            app.staticTexts["Welcome to Tiktik Ghora"].waitForExistence(timeout: 10),
             "Onboarding should show welcome copy"
         )
 
         let request = app.buttons["Request Accessibility…"]
         XCTAssertTrue(request.waitForExistence(timeout: 5), "Request button should exist")
 
-        let host = app.windows["Waypoint UITest Host"]
+        let host = app.windows["Tiktik Ghora UITest Host"]
         if host.waitForExistence(timeout: 3) {
             let open = host.buttons["uitest.openOnboarding"]
             if open.exists { open.click() }

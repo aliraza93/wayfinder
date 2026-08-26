@@ -87,7 +87,10 @@ public actor RealExecutor: ActionExecutor {
             try await synth.emitNavigationChord(primitive, action: action, target: target)
 
         case .contentClick:
-            // Prefer upper/mid editor (not bottom). Double-click selects a word/line highlight.
+            // Geometric content clicks are editor-only. Browsers must use scored page targets.
+            if Self.isBrowserTarget(target) {
+                throw ActionError("contentClick refused for browsers — page-content targets only")
+            }
             guard let point = clickResolver.resolvePoint(
                 bundleID: target.bundleID,
                 randomize: true,
@@ -99,20 +102,30 @@ public actor RealExecutor: ActionExecutor {
             }
             try await synth.emitDoubleClick(primitive, action: action, target: target)
 
-        case .activateWebNavTarget(_, let x, let y):
+        case .activateWebNavTarget(let identity, let x, let y):
+            if Self.isBrowserTarget(target) {
+                // Lowest-layer gate: refuse clicks outside AXWebArea / page content.
+                guard ChromeBrowserUIDetector.isPointInsideWebArea(
+                    bundleID: target.bundleID,
+                    x: x,
+                    y: y
+                ) else {
+                    throw ActionError("refused browser UI / outside page content (\(identity))")
+                }
+                if ChromeBrowserUINames.matches(name: identity) {
+                    throw ActionError("refused browser UI identity (\(identity))")
+                }
+            }
             guard let primitive = ClickPrimitive.make(x: CGFloat(x), y: CGFloat(y)) else {
                 throw ActionError("invalid web nav click point")
             }
-            // Single click follows links; double-click is for editor highlight only.
             try await synth.emitClick(primitive, action: action, target: target)
             try await Task.sleep(nanoseconds: 350_000_000)
 
         case .browserBack:
-            guard let primitive = NavigationChordPrimitive.browserBack() else {
-                throw ActionError("browser back chord not allowlisted")
-            }
-            try await synth.emitNavigationChord(primitive, action: action, target: target)
-            try await Task.sleep(nanoseconds: 400_000_000)
+            // Never drive Chrome Back (toolbar or Cmd+[) from automation.
+            throw ActionError("browserBack refused — Chrome browser UI is off-limits")
+
 
         case .inspectWebPage:
             // Engine refreshes the snapshot via WebPageInspectionSource; no input.
@@ -153,6 +166,13 @@ public actor RealExecutor: ActionExecutor {
         case .switchWindow:
             throw ActionError("unsupported action for RealExecutor")
         }
+    }
+
+    private static func isBrowserTarget(_ target: TargetApp) -> Bool {
+        if target.classification == .browser { return true }
+        return target.bundleID.hasPrefix("com.google.Chrome")
+            || target.bundleID == "com.apple.Safari"
+            || target.bundleID.hasPrefix("company.thebrowser.Browser")
     }
 
     /// Double-click a file row in the sidebar, then land at top/mid of the editor (no End).

@@ -13,11 +13,11 @@ final class StartStopUITests: XCTestCase {
 
         // Onboarding auto-opens under -uitesting via RootMenu.
         XCTAssertTrue(
-            app.staticTexts["Welcome to Waypoint"].waitForExistence(timeout: 10),
+            app.staticTexts["Welcome to Tiktik Ghora"].waitForExistence(timeout: 10),
             "UI should launch"
         )
 
-        let host = app.windows["Waypoint UITest Host"]
+        let host = app.windows["Tiktik Ghora UITest Host"]
         XCTAssertTrue(host.waitForExistence(timeout: 8), "UITest host window should open")
 
         let start = host.buttons["menu.startStop"]

@@ -770,7 +770,8 @@ extension ChromeNavigationSettings: Codable {
         try StrictJSON.requireKeys(
             container,
             allowed: [
-                "enabled", "profile", "allowedDomains", "externalDomainPolicy",
+                "enabled", "profile", "allowedDomains", "blockedDomains", "externalDomainPolicy",
+                "currentDomainOnly", "allowExternalLinks",
                 "maxDepth", "maxPages", "maxTimePerPageSeconds", "maxScrollsPerPage",
                 "crawlDocumentation", "crawlSourceFiles", "crawlRepositoryDirectories",
                 "crawlIssues", "githubStrategy", "selectedDirectories",
@@ -788,11 +789,17 @@ extension ChromeNavigationSettings: Codable {
                 [String].self,
                 forKey: StrictCodingKey(stringValue: "allowedDomains")
             ) ?? [],
+            blockedDomains: try container.decodeIfPresent(
+                [String].self,
+                forKey: StrictCodingKey(stringValue: "blockedDomains")
+            ) ?? [],
             externalDomainPolicy: (try? container.decode(
                 ChromeExternalDomainPolicy.self,
                 forKey: StrictCodingKey(stringValue: "externalDomainPolicy")
             )) ?? .blocked,
-            maxDepth: try StrictJSON.decodeIfPresentInt(container, "maxDepth") ?? 5,
+            currentDomainOnly: try StrictJSON.decodeIfPresentBool(container, "currentDomainOnly") ?? true,
+            allowExternalLinks: try StrictJSON.decodeIfPresentBool(container, "allowExternalLinks") ?? false,
+            maxDepth: try StrictJSON.decodeIfPresentInt(container, "maxDepth") ?? 3,
             maxPages: try StrictJSON.decodeIfPresentInt(container, "maxPages") ?? 20,
             maxTimePerPageSeconds: try StrictJSON.decodeIfPresentDouble(container, "maxTimePerPageSeconds") ?? 180,
             maxScrollsPerPage: try StrictJSON.decodeIfPresentInt(container, "maxScrollsPerPage") ?? 40,
@@ -826,7 +833,10 @@ extension ChromeNavigationSettings: Codable {
         try container.encode(enabled, forKey: StrictCodingKey(stringValue: "enabled"))
         try container.encode(profile, forKey: StrictCodingKey(stringValue: "profile"))
         try container.encode(allowedDomains, forKey: StrictCodingKey(stringValue: "allowedDomains"))
+        try container.encode(blockedDomains, forKey: StrictCodingKey(stringValue: "blockedDomains"))
         try container.encode(externalDomainPolicy, forKey: StrictCodingKey(stringValue: "externalDomainPolicy"))
+        try container.encode(currentDomainOnly, forKey: StrictCodingKey(stringValue: "currentDomainOnly"))
+        try container.encode(allowExternalLinks, forKey: StrictCodingKey(stringValue: "allowExternalLinks"))
         try container.encode(maxDepth, forKey: StrictCodingKey(stringValue: "maxDepth"))
         try container.encode(maxPages, forKey: StrictCodingKey(stringValue: "maxPages"))
         try container.encode(maxTimePerPageSeconds, forKey: StrictCodingKey(stringValue: "maxTimePerPageSeconds"))

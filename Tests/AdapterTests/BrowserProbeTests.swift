@@ -117,6 +117,20 @@ final class BrowserProbeTests: XCTestCase {
         XCTAssertNil(adapter.rewrite(.switchWindow(direction: .next)))
     }
 
+    func testRewriteRefusesBrowserUIActions() {
+        var adapter = BrowserAdapter(probe: FixedBrowserProbe(result: .dependable))
+        adapter.prepare(target: chromeTarget)
+        XCTAssertEqual(adapter.rewrite(.contentClick), .wait(seconds: 0.05))
+        XCTAssertEqual(adapter.rewrite(.browserBack), .wait(seconds: 0.05))
+        if case .activateWebNavTarget = adapter.rewrite(
+            .activateWebNavTarget(identity: "https://example.com/docs", x: 10, y: 20)
+        ) {
+            // allowed through — RealExecutor still validates WebArea
+        } else {
+            XCTFail("activateWebNavTarget should remain for page-content clicks")
+        }
+    }
+
     private var chromeTarget: TargetApp {
         TargetApp(bundleID: "com.google.Chrome", classification: .browser)
     }

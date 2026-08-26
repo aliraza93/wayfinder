@@ -24,9 +24,21 @@ public actor WorkflowEngine {
     public private(set) var currentDwellAllocatedSeconds: Double?
     public private(set) var reviewUIPhase: String = "idle"
     public private(set) var discoverySummary: String = ""
+    /// Frontmost configured target for the current step (bundle id).
+    public private(set) var activeTargetBundleID: String = ""
+    /// Queue length for the active universal session (0 when sequential).
+    public private(set) var reviewQueueCount: Int = 0
+    /// Live Chrome explorer debug (identity only).
+    public private(set) var chromeExplorerDebug: ChromeExplorerDebugSnapshot = .empty
+    /// Preview of pending Chrome navigation targets.
+    public private(set) var chromeNavigationPreview: [String] = []
 
     /// Frontmost workflow target for the current step (updated by activate / return).
-    private var activeTarget: TargetApp?
+    private var activeTarget: TargetApp? {
+        didSet {
+            activeTargetBundleID = activeTarget?.bundleID ?? ""
+        }
+    }
     /// Stack of prior targets for `returnToPrevious`.
     private var returnStack: [TargetApp] = []
     /// All configured targets for this run (lookup by bundle id).
@@ -115,6 +127,14 @@ public actor WorkflowEngine {
         knownTargets = workflow.targets
         activeTarget = target
         returnStack = []
+        reviewQueueCount = 0
+        reviewTargetsCompleted = 0
+        currentReviewIdentity = nil
+        nextReviewIdentity = nil
+        discoverySummary = ""
+        reviewUIPhase = "idle"
+        chromeExplorerDebug = .empty
+        chromeNavigationPreview = []
 
         state = .arming
         state = .running
@@ -177,7 +197,11 @@ public actor WorkflowEngine {
                     targets: knownTargets,
                     discovered: initialDiscovery
                 )
-                discoverySummary = Self.formatDiscovery(controller.discoveryCounts)
+                reviewQueueCount = controller.queue.count
+                discoverySummary = Self.formatDiscovery(
+                    controller.discoveryCounts,
+                    completedVisits: controller.targetsCompleted
+                )
                 reviewUIPhase = "discovering"
                 recordMeta(
                     actionKind: "applicationsDiscovered",
@@ -255,12 +279,20 @@ public actor WorkflowEngine {
                             : []
                         if reviewSettings.discoverRunningApps {
                             mergeDiscoveredIntoKnown(refreshed)
+                            pruneUnavailableKnown(
+                                discovered: refreshed,
+                                configuredBundleIDs: Set(workflow.targets.map(\.bundleID))
+                            )
                         }
                         controller.applyDiscoveryRefresh(
                             discovered: refreshed,
                             workflowTargets: knownTargets
                         )
-                        discoverySummary = Self.formatDiscovery(controller.discoveryCounts)
+                        reviewQueueCount = controller.queue.count
+                        discoverySummary = Self.formatDiscovery(
+                            controller.discoveryCounts,
+                            completedVisits: controller.targetsCompleted
+                        )
                         recordMeta(
                             actionKind: "targetsRefreshed",
                             targetBundleID: activeTarget?.bundleID ?? "",
@@ -278,6 +310,10 @@ public actor WorkflowEngine {
                         let snapshot = pageInspectionSource.inspectFrontmostPage(bundleID: bundleID)
                             ?? .empty
                         controller.applyWebSnapshot(snapshot, now: timing.clock.now)
+                        if let crawl = controller.chromeCrawl {
+                            chromeExplorerDebug = crawl.debugSnapshot()
+                            chromeNavigationPreview = crawl.previewNavigation(limit: 12)
+                        }
                         recordMeta(
                             actionKind: "pageInspected",
                             targetBundleID: bundleID,
@@ -290,6 +326,10 @@ public actor WorkflowEngine {
 
                     guard let pick = controller.nextPick(now: timing.clock.now) else {
                         break outer
+                    }
+                    if let crawl = controller.chromeCrawl {
+                        chromeExplorerDebug = crawl.debugSnapshot()
+                        chromeNavigationPreview = crawl.previewNavigation(limit: 12)
                     }
 
                     let isActivate: Bool
@@ -675,11 +715,28 @@ public actor WorkflowEngine {
         }
     }
 
-    private static func formatDiscovery(_ counts: [String: Int]) -> String {
-        counts
+    /// Drop discovery-only apps that quit; keep configured Targets for relaunch.
+    private func pruneUnavailableKnown(
+        discovered: [DiscoveredApplication],
+        configuredBundleIDs: Set<String>
+    ) {
+        let running = Set(discovered.map(\.bundleID))
+        knownTargets.removeAll { target in
+            !configuredBundleIDs.contains(target.bundleID) && !running.contains(target.bundleID)
+        }
+    }
+
+    private static func formatDiscovery(_ counts: [String: Int], completedVisits: Int = 0) -> String {
+        let body = counts
             .sorted { $0.key < $1.key }
             .map { "\($0.key): \($0.value)" }
             .joined(separator: ", ")
+        if completedVisits > 0 {
+            return body.isEmpty
+                ? "completed: \(completedVisits)"
+                : "\(body); completed: \(completedVisits)"
+        }
+        return body
     }
 
     private func record(action: ActionKind, target: TargetApp, result: RunEventResult) {

@@ -55,11 +55,11 @@ public final class OnboardingViewModel: @unchecked Sendable {
             return HonestCopy.permissionWhy
         case .denied:
             return """
-            Enable Waypoint in System Settings → Privacy & Security → Accessibility, then return here.
+            Enable \(ProductIdentity.displayName) in System Settings → Privacy & Security → Accessibility, then return here.
 
             If the toggle is already ON but this app still says Denied, the grant is for an old build \
-            signature: select Waypoint in that list, click − to remove it, Quit Waypoint, Run again from \
-            Xcode, then enable the new Waypoint entry.
+            signature: select \(ProductIdentity.displayName) in that list, click − to remove it, Quit \
+            \(ProductIdentity.displayName), Run again from Xcode, then enable the new entry.
             """
         case .granted:
             return "You’re ready to build and run read-only navigation workflows."

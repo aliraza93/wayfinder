@@ -1,10 +1,10 @@
-# AGENTS.md — Waypoint
+# AGENTS.md — Tiktik Ghora (Waypoint engine)
 
 > This file is read automatically by Cursor and other coding agents at the start of every session. It also serves as `.cursorrules`. These rules are **binding**. Product-owner prompts that expand **read-only navigation** take precedence over older milestone docs that froze a smaller MVP; do **not** refuse lawful navigation features as “out of scope” when they preserve the mutation ban below.
 
-## What Waypoint is
+## What Tiktik Ghora is
 
-Waypoint is a native macOS menu-bar app that runs **read-only navigation** — preferably as one **Universal Workspace Navigation** workflow that discovers suitable open apps and crawls configured files/tabs (and optionally Finder, Preview, and other apps via a conservative generic adapter):
+**Tiktik Ghora** is a native macOS app (main SwiftUI dashboard + menu-bar companion) that runs **read-only navigation** — preferably as one **Universal Workspace Navigation** workflow that discovers suitable open apps and crawls configured files/tabs (and optionally Finder, Preview, and other apps via a conservative generic adapter):
 
 - Focus / activate already-running apps and windows
 - Open or switch to **existing** workspace files the user configured
@@ -18,10 +18,10 @@ Waypoint is a native macOS menu-bar app that runs **read-only navigation** — p
 
 ## Project constants (single source of truth)
 
-- **Product name:** Waypoint
+- **Product display name:** Tiktik Ghora
 - **Bundle identifier:** `com.twixrsolutions.waypoint` ← baked into signing and the Accessibility permission grant. Do NOT change it after first shipping; changing it later resets every user's granted permission.
-- **Config location:** `~/Library/Application Support/Waypoint/workflows.json`
-- **Language / UI:** Swift, SwiftUI (`MenuBarExtra`), AppKit interop where needed.
+- **Config location:** `~/Library/Application Support/Waypoint/workflows.json` (folder name kept for compatibility until an explicit migration)
+- **Language / UI:** Swift, SwiftUI (`WindowGroup` dashboard + `MenuBarExtra`), AppKit interop where needed.
 - **Distribution:** Developer ID + notarization, shipped as a DMG. **NOT** the Mac App Store.
 
 ## Absolute invariants (never violate)

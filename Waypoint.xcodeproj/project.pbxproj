@@ -30,6 +30,12 @@
 		AA0000000000000000000104 /* AppPresentation in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000003D /* AppPresentation */; };
 		AA0000000000000000000105 /* SingleInstance.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000114 /* SingleInstance.swift */; };
 		AA0000000000000000000106 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000115 /* AppDelegate.swift */; };
+		AA0000000000000000000300 /* MainShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000310 /* MainShellView.swift */; };
+		AA0000000000000000000301 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000311 /* DashboardView.swift */; };
+		AA0000000000000000000302 /* ShellSectionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000312 /* ShellSectionViews.swift */; };
+		AA0000000000000000000303 /* AppChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000313 /* AppChrome.swift */; };
+		AA0000000000000000000304 /* TiktikTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000314 /* TiktikTheme.swift */; };
+		AA0000000000000000000305 /* DashboardComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000315 /* DashboardComponents.swift */; };
 		AA0000000000000000000200 /* OnboardingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000210 /* OnboardingUITests.swift */; };
 		AA0000000000000000000201 /* StartStopUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000211 /* StartStopUITests.swift */; };
 		AA0000000000000000000202 /* EditorSaveUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000213 /* EditorSaveUITests.swift */; };
@@ -59,6 +65,12 @@
 		AA0000000000000000000113 /* RunTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunTimelineView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000114 /* SingleInstance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleInstance.swift; sourceTree = "<group>"; };
 		AA0000000000000000000115 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		AA0000000000000000000310 /* MainShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainShellView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000311 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000312 /* ShellSectionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellSectionViews.swift; sourceTree = "<group>"; };
+		AA0000000000000000000313 /* AppChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppChrome.swift; sourceTree = "<group>"; };
+		AA0000000000000000000314 /* TiktikTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiktikTheme.swift; sourceTree = "<group>"; };
+		AA0000000000000000000315 /* DashboardComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardComponents.swift; sourceTree = "<group>"; };
 		AA0000000000000000000210 /* OnboardingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingUITests.swift; sourceTree = "<group>"; };
 		AA0000000000000000000211 /* StartStopUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartStopUITests.swift; sourceTree = "<group>"; };
 		AA0000000000000000000212 /* WaypointUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WaypointUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -115,11 +127,25 @@
 				AA0000000000000000000016 /* Info.plist */,
 				AA0000000000000000000017 /* Waypoint.entitlements */,
 				AA0000000000000000000042 /* MenuBar */,
+				AA0000000000000000000048 /* MainShell */,
 				AA0000000000000000000045 /* Onboarding */,
 				AA0000000000000000000046 /* Editor */,
 				AA0000000000000000000047 /* Timeline */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000048 /* MainShell */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000310 /* MainShellView.swift */,
+				AA0000000000000000000311 /* DashboardView.swift */,
+				AA0000000000000000000312 /* ShellSectionViews.swift */,
+				AA0000000000000000000313 /* AppChrome.swift */,
+				AA0000000000000000000314 /* TiktikTheme.swift */,
+				AA0000000000000000000315 /* DashboardComponents.swift */,
+			);
+			path = MainShell;
 			sourceTree = "<group>";
 		};
 		AA0000000000000000000042 /* MenuBar */ = {
@@ -279,6 +305,12 @@
 				AA0000000000000000000103 /* RunTimelineView.swift in Sources */,
 				AA0000000000000000000105 /* SingleInstance.swift in Sources */,
 				AA0000000000000000000106 /* AppDelegate.swift in Sources */,
+				AA0000000000000000000300 /* MainShellView.swift in Sources */,
+				AA0000000000000000000301 /* DashboardView.swift in Sources */,
+				AA0000000000000000000302 /* ShellSectionViews.swift in Sources */,
+				AA0000000000000000000303 /* AppChrome.swift in Sources */,
+				AA0000000000000000000304 /* TiktikTheme.swift in Sources */,
+				AA0000000000000000000305 /* DashboardComponents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -12,56 +12,107 @@ public enum WebLinkScorer: Sendable {
         let href = element.href ?? element.identity
         let normalized = URLNormalizer.normalize(href)
         let domain = URLNormalizer.host(of: normalized.isEmpty ? snapshot.url : normalized)
-        let safeName = WebLinkSafetyFilter.isSafe(name: element.name, href: href)
-        let safeDomain = WebLinkSafetyFilter.isAllowedDomain(
-            href: href,
+        let classified: WebNavElement = {
+            if element.classification != .unknown, element.surface != .unknown {
+                return element
+            }
+            var copy = element
+            let surface: WebNavSurface = element.surface == .unknown ? .pageContent : element.surface
+            copy.surface = surface
+            copy.classification = WebElementClassifier.classify(
+                name: element.name,
+                href: element.href,
+                role: element.role,
+                surface: surface,
+                pageURL: snapshot.url,
+                pageKind: snapshot.kind
+            )
+            return copy
+        }()
+
+        let safe = WebLinkSafetyFilter.isActivatable(
+            element: classified,
             currentURL: snapshot.url,
-            settings: settings
-        )
-        let pathAllowed = !settings.excludedPathPrefixes.contains { prefix in
-            normalized.lowercased().contains(prefix.lowercased())
-        }
-        let safe = safeName && safeDomain && pathAllowed && depth <= settings.maxDepth
-        let alreadyVisited = visited.contains(normalized) || visited.contains(element.identity)
+            policy: settings.domainPolicy
+        ) && depth <= settings.maxDepth
+            && !settings.excludedPathPrefixes.contains { prefix in
+                normalized.lowercased().contains(prefix.lowercased())
+            }
+        let visitKey = ChromeVisitKey.forElement(classified)
+        let alreadyVisited = visited.contains(normalized)
+            || visited.contains(element.identity)
+            || visited.contains(visitKey)
+            || (!normalized.isEmpty && visited.contains(normalized))
 
         var priority = 0
         if safe { priority += 10 }
         if !alreadyVisited { priority += 8 }
-        if safeDomain { priority += 6 }
+        if settings.domainPolicy.allows(href: href, currentURL: snapshot.url) { priority += 6 }
 
-        let name = element.name.lowercased()
+        let name = classified.name.lowercased()
         let path = normalized.lowercased()
 
-        switch settings.profile {
-        case .documentation:
-            priority += docsBoost(name: name, role: element.role, path: path)
-        case .githubRepository:
+        // Score from page kind first so a mis-set profile still navigates GitHub/docs correctly.
+        switch snapshot.kind {
+        case .githubRepoRoot, .githubTree, .githubBlob, .githubOther, .githubIssues:
             priority += githubBoost(
                 name: name,
-                path: path,
+                path: path.isEmpty ? name : path,
                 kind: snapshot.kind,
                 settings: settings
             )
+        case .documentation:
+            priority += docsBoost(name: name, role: classified.role, path: path)
+        case .generic:
+            break
+        }
+
+        switch settings.profile {
+        case .documentation:
+            if snapshot.kind != .documentation {
+                priority += docsBoost(name: name, role: classified.role, path: path)
+            }
+        case .githubRepository:
+            if snapshot.kind == .generic {
+                priority += githubBoost(
+                    name: name,
+                    path: path.isEmpty ? name : path,
+                    kind: snapshot.kind,
+                    settings: settings
+                )
+            }
         case .generalWebsite:
-            priority += generalBoost(name: name, role: element.role)
+            priority += generalBoost(name: name, role: classified.role)
         case .custom:
-            priority += generalBoost(name: name, role: element.role)
+            priority += generalBoost(name: name, role: classified.role)
             for keyword in settings.preferredLinkKeywords where name.contains(keyword) || path.contains(keyword) {
                 priority += 12
             }
+        }
+
+        switch classified.classification {
+        case .sourceCodeFile: priority += 100
+        case .repositoryDirectory: priority += 100
+        case .documentationLink, .tableOfContents: priority += 90
+        case .internalNavigation: priority += 70
+        case .articleLink: priority += 70
+        case .pagination: priority += 60
+        case .externalLink: priority -= 100
+        case .dangerousAction, .form, .actionButton, .browserUI: priority -= 100
+        case .unknown: break
         }
 
         for keyword in settings.preferredLinkKeywords where name.contains(keyword) || path.contains(keyword) {
             priority += 5
         }
 
-        if element.role == .pagination {
+        if classified.role == .pagination || classified.classification == .pagination {
             priority += settings.profile == .documentation ? 4 : 2
         }
 
-        let typeLabel = typeLabel(for: element, path: path, kind: snapshot.kind)
+        let typeLabel = typeLabel(for: classified, path: path, kind: snapshot.kind)
         return WebNavCandidate(
-            element: element,
+            element: classified,
             domain: domain,
             depth: depth,
             parentURL: URLNormalizer.normalize(snapshot.url),
@@ -96,6 +147,7 @@ public enum WebLinkScorer: Sendable {
     private static func docsBoost(name: String, role: WebNavRole, path: String) -> Int {
         var p = 0
         if role == .navigation { p += 10 }
+        if role == .heading { p += 7 }
         if name.contains("next") || name.contains("previous") || name.contains("prev") { p += 14 }
         if name.contains("toc") || name.contains("contents") || name.contains("guide") { p += 8 }
         if path.contains("/docs") || path.contains("/documentation") { p += 8 }
@@ -140,15 +192,26 @@ public enum WebLinkScorer: Sendable {
         var p = 0
         if role == .navigation { p += 6 }
         if role == .link { p += 3 }
+        if role == .heading { p += 2 }
         if name.contains("learn") || name.contains("docs") || name.contains("guide") { p += 5 }
         return p
     }
 
     private static func typeLabel(for element: WebNavElement, path: String, kind: WebPageKind) -> String {
-        if path.contains("/blob/") { return "sourceFile" }
-        if path.contains("/tree/") { return "directory" }
+        switch element.classification {
+        case .sourceCodeFile: return "sourceFile"
+        case .repositoryDirectory: return "directory"
+        case .documentationLink, .tableOfContents: return "documentation"
+        case .pagination: return "pagination"
+        default: break
+        }
+        if path.contains("/blob/") || GitHubURLParser.isSourceFilePath(path) || GitHubURLParser.isSourceFilePath(element.name) {
+            return "sourceFile"
+        }
+        if path.contains("/tree/") || element.name.hasSuffix("/") { return "directory" }
         if element.role == .pagination { return "pagination" }
         if element.role == .navigation { return "navigation" }
+        if element.role == .heading { return "heading" }
         if kind == .documentation { return "documentation" }
         return element.role.rawValue
     }

@@ -1,4 +1,5 @@
 import AppKit
+import Domain
 import SwiftUI
 
 /// Forwards activation so Accessibility can flip Denied → Granted after the Settings toggle without relaunch.
@@ -6,8 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var onBecameActive: (() -> Void)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Menu-bar agent by default; windows bump to .regular via WindowPresenter.
-        _ = NSApp.setActivationPolicy(.accessory)
+        // Main window + menu bar companion: regular activation (Dock icon).
+        _ = NSApp.setActivationPolicy(.regular)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(windowDidClose(_:)),
@@ -60,15 +61,8 @@ enum WindowPresenter {
     }
 
     static func restoreAccessoryIfNeeded() {
-        let hasVisible = NSApp.windows.contains { window in
-            window.isVisible
-                && window.styleMask.contains(.titled)
-                && !window.className.contains("StatusBar")
-                && !window.className.contains("MenuBarExtra")
-        }
-        if !hasVisible, NSApp.activationPolicy() != .accessory {
-            _ = NSApp.setActivationPolicy(.accessory)
-        }
+        // With a main WindowGroup, stay regular so the Dock icon remains available.
+        // Helper-only close no longer forces accessory mode.
     }
 
     private static func matches(_ window: NSWindow, id: String) -> Bool {
@@ -76,10 +70,11 @@ enum WindowPresenter {
             return true
         }
         let titles: [String: String] = [
+            "main": ProductIdentity.displayName,
             "editor": "Workflow Editor",
             "timeline": "Run Timeline",
             "onboarding": "Onboarding",
-            "uitest-host": "Waypoint UITest Host",
+            "uitest-host": "\(ProductIdentity.displayName) UITest Host",
         ]
         if let expected = titles[id], window.title == expected {
             return true

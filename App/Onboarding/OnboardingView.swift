@@ -1,4 +1,5 @@
 import AppPresentation
+import Domain
 import Permissions
 import SwiftUI
 
@@ -7,22 +8,37 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Welcome to Waypoint")
-                .font(.title2)
-                .accessibilityIdentifier("onboarding.title")
-            Text(HonestCopy.tagline)
-                .foregroundStyle(.secondary)
+            HStack(alignment: .center, spacing: 12) {
+                BrandMark(size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Welcome to \(ProductIdentity.displayName)")
+                        .font(.title2.weight(.semibold))
+                        .accessibilityIdentifier("onboarding.title")
+                    Text(HonestCopy.tagline)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Text("What it does")
                 .font(.headline)
             Text(HonestCopy.does)
+                .font(.callout)
+
             Text("What it will never do")
                 .font(.headline)
             Text(HonestCopy.neverDoes)
+                .font(.callout)
+
             Divider()
+
             Text(model.statusTitle)
                 .font(.headline)
                 .accessibilityIdentifier("onboarding.status")
             Text(model.statusDetail)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
             HStack {
                 Button("Request Accessibility…") {
                     model.request()
@@ -37,8 +53,9 @@ struct OnboardingView: View {
                 }
                 .accessibilityIdentifier("onboarding.recheck")
             }
+
             if model.isGranted {
-                Text("Ready — close this window and use the menu bar.")
+                Text("Ready — close this window and use the Dashboard or menu bar.")
                     .foregroundStyle(.green)
                     .accessibilityIdentifier("onboarding.ready")
             }

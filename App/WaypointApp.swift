@@ -1,4 +1,5 @@
 import AppPresentation
+import Domain
 import Permissions
 import SwiftUI
 
@@ -12,8 +13,10 @@ struct WaypointApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Waypoint", systemImage: "location.north.line") {
-            RootMenu(session: session)
+        // Main desktop shell (Dashboard + sidebar).
+        WindowGroup(ProductIdentity.displayName, id: "main") {
+            MainShellView(session: session)
+                .frame(minWidth: 880, minHeight: 560)
                 .onAppear {
                     appDelegate.onBecameActive = { [weak session] in
                         Task { @MainActor in
@@ -21,29 +24,38 @@ struct WaypointApp: App {
                         }
                     }
                     session.refreshPermissions()
+                    session.refreshWorkflowNames()
+                }
+        }
+        .defaultSize(width: 1100, height: 720)
+
+        MenuBarExtra(ProductIdentity.displayName, systemImage: ProductIdentity.menuBarSystemImage) {
+            RootMenu(session: session)
+                .onAppear {
+                    session.refreshPermissions()
                 }
         }
 
-        Window("Onboarding", id: "onboarding") {
+        Window("Onboarding — \(ProductIdentity.displayName)", id: "onboarding") {
             OnboardingView(model: session.onboardingUI)
                 .accessibilityIdentifier("window.onboarding")
         }
         .defaultSize(width: 520, height: 400)
 
-        Window("Workflow Editor", id: "editor") {
+        Window("Workflow Editor — \(ProductIdentity.displayName)", id: "editor") {
             WorkflowEditorView(model: session.editorUI)
                 .accessibilityIdentifier("window.editor")
         }
         .defaultSize(width: 760, height: 520)
 
-        Window("Run Timeline", id: "timeline") {
+        Window("Run Timeline — \(ProductIdentity.displayName)", id: "timeline") {
             RunTimelineView(model: session.timelineUI)
                 .accessibilityIdentifier("window.timeline")
         }
         .defaultSize(width: 600, height: 360)
 
         // UITest host surface — openable without clicking the menu-bar extra.
-        Window("Waypoint UITest Host", id: "uitest-host") {
+        Window("\(ProductIdentity.displayName) UITest Host", id: "uitest-host") {
             UITestHostView(session: session)
         }
         .defaultSize(width: 360, height: 240)
@@ -57,7 +69,7 @@ struct UITestHostView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Waypoint UITest Host")
+            Text("\(ProductIdentity.displayName) UITest Host")
                 .accessibilityIdentifier("uitest.host.title")
             Text(session.permissionLabel)
                 .accessibilityIdentifier("menu.permission")

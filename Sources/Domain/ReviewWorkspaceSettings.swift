@@ -12,13 +12,24 @@ public enum ReadAndReviewWorkspace {
 
 /// How configured / discovered targets are ordered.
 public enum ReviewTargetOrder: String, Equatable, Sendable, CaseIterable {
+    /// Files → tabs → apps, interleaved by app class so Cursor↔Chrome both get turns.
     case sequential
+    /// Shuffle then interleave by app class.
     case random
+    /// Keep configured Targets / files / tabs order (no class interleave).
+    case configuredPriority
+    /// Prefer Cursor → Chrome → Finder → Preview → Safari → others.
+    case applicationPriority
+    /// Prefer least-visited identities this session (rotation).
+    case targetRotation
 
     public var title: String {
         switch self {
         case .sequential: return "Sequential"
         case .random: return "Random order"
+        case .configuredPriority: return "Configured priority"
+        case .applicationPriority: return "Application priority"
+        case .targetRotation: return "Target rotation"
         }
     }
 }
@@ -254,6 +265,11 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
     }
 
     public static let `default` = ReviewWorkspaceSettings()
+
+    /// Defaults used by the single Universal Workspace Navigation workflow.
+    public static var universalDefault: ReviewWorkspaceSettings {
+        UniversalWorkflowBridge.defaultSettings
+    }
 
     public mutating func normalize() {
         dwellMinSeconds = min(max(5, dwellMinSeconds), 600)

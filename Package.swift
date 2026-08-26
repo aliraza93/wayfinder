@@ -88,7 +88,7 @@ let package = Package(
         ),
         .target(
             name: "AppControl",
-            dependencies: ["Domain"],
+            dependencies: ["Domain", "WaypointAccessibility"],
             path: "Sources/AppControl"
         ),
         .target(

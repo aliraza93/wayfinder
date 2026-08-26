@@ -167,9 +167,17 @@ public struct BrowserAdapter: Sendable {
             return .highlightNavigate(direction: direction)
 
         case .contentClick:
-            return .contentClick
+            // Geometric clicks are unsafe in Chrome (toolbar / tab close). Refuse at adapter.
+            return .wait(seconds: 0.05)
 
-        case .activateWebNavTarget, .browserBack, .inspectWebPage:
+        case .activateWebNavTarget:
+            return action
+
+        case .browserBack:
+            // Never rewrite to Cmd+[ — Chrome browser UI is off-limits.
+            return .wait(seconds: 0.05)
+
+        case .inspectWebPage:
             return action
 
         case .explorerFileSwitch:

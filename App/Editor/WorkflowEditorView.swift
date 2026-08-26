@@ -357,6 +357,18 @@ struct WorkflowEditorView: View {
                     )
                     .onChange(of: model.chromeAllowedDomainsText) { _ in model.pushReviewSettings() }
 
+                Text("Blocked domains (one per line)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $model.chromeBlockedDomainsText)
+                    .font(.body)
+                    .frame(minHeight: 40, maxHeight: 72)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.secondary.opacity(0.25))
+                    )
+                    .onChange(of: model.chromeBlockedDomainsText) { _ in model.pushReviewSettings() }
+
                 Picker("External domains", selection: $model.chromeExternalPolicy) {
                     Text("Blocked").tag(ChromeExternalDomainPolicy.blocked)
                     Text("Allowlist only").tag(ChromeExternalDomainPolicy.allowlist)
@@ -375,6 +387,12 @@ struct WorkflowEditorView: View {
                     in: 1...30
                 )
                 .onChange(of: model.chromeMaxTimePerPageMinutes) { _ in model.pushReviewSettings() }
+                Stepper(
+                    "Max scrolls per page: \(model.chromeMaxScrollsPerPage)",
+                    value: $model.chromeMaxScrollsPerPage,
+                    in: 5...200
+                )
+                .onChange(of: model.chromeMaxScrollsPerPage) { _ in model.pushReviewSettings() }
 
                 Toggle("Documentation", isOn: $model.chromeCrawlDocumentation)
                     .onChange(of: model.chromeCrawlDocumentation) { _ in model.pushReviewSettings() }
@@ -391,6 +409,44 @@ struct WorkflowEditorView: View {
                     Text("Selected directories").tag(GitHubCrawlStrategy.selectedDirectories)
                 }
                 .onChange(of: model.chromeGithubStrategy) { _ in model.pushReviewSettings() }
+
+                if model.chromeGithubStrategy == .selectedDirectories {
+                    Text("Selected directories (one per line, e.g. app/)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $model.chromeSelectedDirectoriesText)
+                        .font(.body)
+                        .frame(minHeight: 40, maxHeight: 72)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.secondary.opacity(0.25))
+                        )
+                        .onChange(of: model.chromeSelectedDirectoriesText) { _ in model.pushReviewSettings() }
+                }
+
+                Text("Preferred link keywords (one per line)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $model.chromePreferredKeywordsText)
+                    .font(.body)
+                    .frame(minHeight: 40, maxHeight: 72)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.secondary.opacity(0.25))
+                    )
+                    .onChange(of: model.chromePreferredKeywordsText) { _ in model.pushReviewSettings() }
+
+                Text("Excluded path prefixes (one per line)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $model.chromeExcludedPathsText)
+                    .font(.body)
+                    .frame(minHeight: 40, maxHeight: 72)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.secondary.opacity(0.25))
+                    )
+                    .onChange(of: model.chromeExcludedPathsText) { _ in model.pushReviewSettings() }
 
                 Divider()
                 Text("Chrome tabs")
@@ -622,15 +678,20 @@ final class WorkflowEditorUIModel: ObservableObject {
     @Published var chromeEnabled = true
     @Published var chromeProfile: ChromeNavigationProfile = .generalWebsite
     @Published var chromeAllowedDomainsText = ""
+    @Published var chromeBlockedDomainsText = ""
     @Published var chromeExternalPolicy: ChromeExternalDomainPolicy = .blocked
     @Published var chromeMaxDepth = 5
     @Published var chromeMaxPages = 20
     @Published var chromeMaxTimePerPageMinutes = 3
+    @Published var chromeMaxScrollsPerPage = 40
     @Published var chromeCrawlDocumentation = true
     @Published var chromeCrawlSourceFiles = true
     @Published var chromeCrawlDirectories = true
     @Published var chromeCrawlIssues = false
     @Published var chromeGithubStrategy: GitHubCrawlStrategy = .breadthFirst
+    @Published var chromeSelectedDirectoriesText = "app/\nsrc/\nroutes/\ntests/"
+    @Published var chromePreferredKeywordsText = ""
+    @Published var chromeExcludedPathsText = ""
     @Published var selectedRunningIndex = -1
     @Published var selectedClass: TargetAppClass = .generic
     @Published var selectedSavedName: String = ""
@@ -650,6 +711,8 @@ final class WorkflowEditorUIModel: ObservableObject {
 
     init(viewModel: WorkflowEditorViewModel) {
         self.viewModel = viewModel
+        // Align new-editor defaults with Universal Workspace Navigation.
+        targetOrder = .applicationPriority
         syncFromVM()
     }
 
@@ -732,15 +795,28 @@ final class WorkflowEditorUIModel: ObservableObject {
         chrome.allowedDomains = chromeAllowedDomainsText
             .split(whereSeparator: \.isNewline)
             .map(String.init)
+        chrome.blockedDomains = chromeBlockedDomainsText
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
         chrome.externalDomainPolicy = chromeExternalPolicy
         chrome.maxDepth = chromeMaxDepth
         chrome.maxPages = chromeMaxPages
         chrome.maxTimePerPageSeconds = Double(chromeMaxTimePerPageMinutes) * 60
+        chrome.maxScrollsPerPage = chromeMaxScrollsPerPage
         chrome.crawlDocumentation = chromeCrawlDocumentation
         chrome.crawlSourceFiles = chromeCrawlSourceFiles
         chrome.crawlRepositoryDirectories = chromeCrawlDirectories
         chrome.crawlIssues = chromeCrawlIssues
         chrome.githubStrategy = chromeGithubStrategy
+        chrome.selectedDirectories = chromeSelectedDirectoriesText
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+        chrome.preferredLinkKeywords = chromePreferredKeywordsText
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+        chrome.excludedPathPrefixes = chromeExcludedPathsText
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
         chrome.normalize()
         settings.chrome = chrome
         viewModel.setReviewSettings(settings)
@@ -931,6 +1007,7 @@ final class WorkflowEditorUIModel: ObservableObject {
         chromeEnabled = viewModel.draft.review.chrome.enabled
         chromeProfile = viewModel.draft.review.chrome.profile
         chromeAllowedDomainsText = viewModel.draft.review.chrome.allowedDomains.joined(separator: "\n")
+        chromeBlockedDomainsText = viewModel.draft.review.chrome.blockedDomains.joined(separator: "\n")
         chromeExternalPolicy = viewModel.draft.review.chrome.externalDomainPolicy
         chromeMaxDepth = viewModel.draft.review.chrome.maxDepth
         chromeMaxPages = viewModel.draft.review.chrome.maxPages
@@ -938,11 +1015,15 @@ final class WorkflowEditorUIModel: ObservableObject {
             1,
             Int((viewModel.draft.review.chrome.maxTimePerPageSeconds / 60).rounded())
         )
+        chromeMaxScrollsPerPage = viewModel.draft.review.chrome.maxScrollsPerPage
         chromeCrawlDocumentation = viewModel.draft.review.chrome.crawlDocumentation
         chromeCrawlSourceFiles = viewModel.draft.review.chrome.crawlSourceFiles
         chromeCrawlDirectories = viewModel.draft.review.chrome.crawlRepositoryDirectories
         chromeCrawlIssues = viewModel.draft.review.chrome.crawlIssues
         chromeGithubStrategy = viewModel.draft.review.chrome.githubStrategy
+        chromeSelectedDirectoriesText = viewModel.draft.review.chrome.selectedDirectories.joined(separator: "\n")
+        chromePreferredKeywordsText = viewModel.draft.review.chrome.preferredLinkKeywords.joined(separator: "\n")
+        chromeExcludedPathsText = viewModel.draft.review.chrome.excludedPathPrefixes.joined(separator: "\n")
         if durationPreset == .custom, let seconds = viewModel.draft.maxDurationSeconds {
             customDurationMinutes = max(1, Int((seconds / 60).rounded()))
         }

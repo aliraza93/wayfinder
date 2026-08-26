@@ -12,7 +12,8 @@ public struct WorkspaceRunningAppsProvider: RunningAppsProvider {
                 bundleID: app.bundleIdentifier,
                 displayName: app.localizedName,
                 activationPolicy: Self.mapPolicy(app.activationPolicy),
-                isActive: frontmostPID.map { $0 == app.processIdentifier } ?? app.isActive
+                isActive: frontmostPID.map { $0 == app.processIdentifier } ?? app.isActive,
+                processID: app.processIdentifier
             )
         }
     }

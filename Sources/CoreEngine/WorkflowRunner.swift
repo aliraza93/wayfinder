@@ -278,7 +278,7 @@ public actor WorkflowRunner {
                             onError: .abort
                         ),
                     ],
-                    loop: LoopSettings(enabled: true, maxIterations: 2, maxDurationSeconds: 30)
+                    loop: LoopSettings(enabled: true, maxIterations: 2, maxDurationSeconds: nil)
                 ),
             ]
         )

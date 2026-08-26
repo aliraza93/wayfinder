@@ -9,6 +9,7 @@ Waypoint runs **on your Mac only**. Core automation makes **no outbound network 
 | What | Where | Contents |
 |------|--------|----------|
 | Workflows | `~/Library/Application Support/Waypoint/workflows.json` | Workflow names, target bundle IDs, step kinds/parameters you configured (including file paths / tab labels you enter) |
+| Session history | `~/Library/Application Support/Waypoint/session-history.json` | Start/end times, duration, workflow name, bundle IDs visited, configured target identities, action-kind counts, failure counts — never document body text or screenshots |
 | Run timeline / export | In-memory during a run; export only what you choose to save | `{timestamp, actionKind, targetBundleID, result}` plus optional identity metadata you configured (e.g. relative file path, tab label) — never document body text |
 
 Waypoint does **not** store document text, keystroke streams of typed content, screenshots, or file contents in logs.

@@ -1,123 +1,36 @@
 import AppKit
+import AppPresentation
+import Domain
 import SwiftUI
 
+/// Menu bar companion — mirrors `AppSession` / dashboard state (no second engine).
 struct RootMenu: View {
     @ObservedObject var session: AppSession
     @Environment(\.openWindow) private var openWindow
 
-    private var isGranted: Bool {
-        session.accessibilityGranted
-    }
+    private var snap: DashboardRunSnapshot { session.dashboard }
 
     var body: some View {
-        if let banner = session.saveConfirmationMessage {
-            Text(banner)
-                .foregroundStyle(.green)
-                .font(.callout)
-                .accessibilityIdentifier("menu.saveConfirmation")
-        }
+        Text(ProductIdentity.displayName)
+            .font(.headline)
+            .accessibilityIdentifier("menu.productTitle")
 
-        Text(session.permissionLabel)
-            .accessibilityIdentifier("menu.permission")
-        Text(session.liveStatusLine)
-            .font(.caption)
-            .accessibilityIdentifier("menu.liveStatus")
-
-        if isGranted {
-            Text("Accessibility OK — no prompt needed")
-                .font(.caption2)
-        } else {
-            Text("Accessibility Denied — Start won’t run until Granted. Remove Waypoint (−) in Settings if toggle is stale, Run again, enable the new entry.")
-                .font(.caption2)
-                .lineLimit(4)
-            Button("Request Accessibility…") {
-                session.requestAccessibility()
-            }
-            .accessibilityIdentifier("menu.requestAccessibility")
-        }
-
-        Button("Refresh Accessibility status") {
-            session.refreshPermissions()
-        }
-        Button("Open Accessibility Settings") {
-            session.openAccessibilitySettings()
-        }
-        if !isGranted {
-            Button("Permission onboarding…") {
-                session.openOnboarding()
-                WindowPresenter.open(openWindow, id: "onboarding")
-            }
-            .accessibilityIdentifier("menu.onboarding")
-        }
-
-        Divider()
-
-        Text("Workflows")
-            .font(.caption)
-        if session.workflowNames.isEmpty {
-            Text("No saved workflows — open the editor")
-                .font(.caption)
-        } else {
-            ForEach(session.workflowNames, id: \.self) { name in
-                Button(session.selectedWorkflow == name ? "▶ \(name)" : name) {
-                    session.selectWorkflow(name)
-                }
-            }
-            Text("▶ = selected. Then click Start (does not run on name tap).")
-                .font(.caption2)
-        }
-
-        Button(session.isRunning ? "Stop (⌃⌥.)" : "Start") {
-            if session.isRunning {
-                session.stop()
-            } else {
-                session.startSelected()
-            }
-        }
-        // Allow Start click even when Denied so we can show why it won’t run.
-        .disabled(session.isRunning ? false : session.selectedWorkflow == nil)
-        .accessibilityIdentifier("menu.startStop")
-
-        if session.isRunning {
-            if session.isPaused {
-                Button("Resume (⌃⌥R)") { session.resume() }
-                    .accessibilityIdentifier("menu.resume")
-            } else {
-                Button("Pause (⌃⌥P)") { session.pause() }
-                    .accessibilityIdentifier("menu.pause")
-            }
-        }
-
-        ForEach(session.progressLines, id: \.self) { line in
-            Text(line)
-                .font(.caption2)
-        }
-
-        Divider()
-        Button("Workflow Editor…") {
-            session.openEditor()
-            WindowPresenter.open(openWindow, id: "editor")
-        }
-        .accessibilityIdentifier("menu.editor")
-        Button("Run Timeline…") {
-            session.openTimeline()
-            WindowPresenter.open(openWindow, id: "timeline")
-        }
-        .accessibilityIdentifier("menu.timeline")
-        Button("Refresh workflows") {
-            session.refreshWorkflowNames()
-        }
-
-        if !session.lastMessage.isEmpty {
-            Text(session.lastMessage)
-                .font(.caption)
-                .lineLimit(3)
-        }
-
-        Divider()
-        Text("Hot-keys: Stop Ctrl+Opt+. · Pause Ctrl+Opt+P · Resume Ctrl+Opt+R")
+        Text(ProductIdentity.tagline)
             .font(.caption2)
-        Button("Quit Waypoint") {
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+
+        switch menuMode {
+        case .idle:
+            idleContent
+        case .running:
+            runningContent
+        case .paused:
+            pausedContent
+        }
+
+        Divider()
+        Button("Quit \(ProductIdentity.displayName)") {
             NSApplication.shared.terminate(nil)
         }
         .accessibilityIdentifier("menu.quit")
@@ -128,7 +41,179 @@ struct RootMenu: View {
                 WindowPresenter.open(openWindow, id: "uitest-host")
                 WindowPresenter.open(openWindow, id: "onboarding")
             }
-            // Do not auto-pop onboarding on every menu open — only open when user asks.
         }
+    }
+
+    private enum MenuMode {
+        case idle
+        case running
+        case paused
+    }
+
+    private var menuMode: MenuMode {
+        if session.isRunning {
+            return session.isPaused ? .paused : .running
+        }
+        return .idle
+    }
+
+    // MARK: - Idle
+
+    @ViewBuilder
+    private var idleContent: some View {
+        if let banner = session.saveConfirmationMessage {
+            Text(banner)
+                .foregroundStyle(.green)
+                .font(.callout)
+                .accessibilityIdentifier("menu.saveConfirmation")
+        }
+
+        Text(session.liveStatusLine)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("menu.liveStatus")
+
+        if !session.accessibilityGranted {
+            Text(session.permissionLabel)
+                .font(.caption2)
+                .foregroundStyle(.orange)
+                .accessibilityIdentifier("menu.permission")
+        }
+
+        Button("Open Dashboard") {
+            openDashboard()
+        }
+        .accessibilityIdentifier("menu.openDashboard")
+
+        startWorkflowControl
+
+        Button("Settings") {
+            openDashboard(section: .settings)
+        }
+        .accessibilityIdentifier("menu.settings")
+    }
+
+    @ViewBuilder
+    private var startWorkflowControl: some View {
+        if session.workflowNames.isEmpty {
+            Button("Start Workflow") {}
+                .disabled(true)
+                .accessibilityIdentifier("menu.startStop")
+            Text("No saved workflows — open Dashboard → Workflows")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        } else if session.workflowNames.count == 1, let only = session.workflowNames.first {
+            Button("Start Workflow") {
+                session.selectWorkflow(only)
+                session.startSelected()
+            }
+            .accessibilityIdentifier("menu.startStop")
+        } else {
+            Menu("Start Workflow") {
+                ForEach(session.workflowNames, id: \.self) { name in
+                    Button(session.selectedWorkflow == name ? "▶ \(name)" : name) {
+                        session.selectWorkflow(name)
+                        session.startSelected()
+                    }
+                }
+            }
+            .accessibilityIdentifier("menu.startStop")
+        }
+    }
+
+    // MARK: - Running
+
+    @ViewBuilder
+    private var runningContent: some View {
+        Text("Running")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.green)
+            .accessibilityIdentifier("menu.liveStatus")
+
+        if !snap.workflowName.isEmpty {
+            Text(snap.workflowName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        Text("App: \(snap.currentApplication)")
+            .font(.caption)
+            .lineLimit(1)
+            .accessibilityIdentifier("menu.currentApplication")
+
+        Text("Target: \(snap.currentFileOrTab)")
+            .font(.caption)
+            .lineLimit(1)
+            .accessibilityIdentifier("menu.currentTarget")
+
+        Text("Elapsed: \(RunLiveStatus.formatClock(snap.elapsedSeconds))")
+            .font(.caption.monospacedDigit())
+            .accessibilityIdentifier("menu.elapsed")
+
+        Divider()
+
+        Button("Pause (⌃⌥P)") {
+            session.pause()
+        }
+        .accessibilityIdentifier("menu.pause")
+
+        Button("Emergency Stop (⌃⌥.)") {
+            session.stop()
+        }
+        .accessibilityIdentifier("menu.startStop")
+
+        Button("Open Dashboard") {
+            openDashboard()
+        }
+        .accessibilityIdentifier("menu.openDashboard")
+    }
+
+    // MARK: - Paused
+
+    @ViewBuilder
+    private var pausedContent: some View {
+        Text("Paused")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.orange)
+            .accessibilityIdentifier("menu.liveStatus")
+
+        if !snap.workflowName.isEmpty {
+            Text(snap.workflowName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        if snap.currentApplication != "—" {
+            Text("App: \(snap.currentApplication)")
+                .font(.caption)
+                .lineLimit(1)
+        }
+
+        Text("Elapsed: \(RunLiveStatus.formatClock(snap.elapsedSeconds))")
+            .font(.caption.monospacedDigit())
+
+        Divider()
+
+        Button("Resume (⌃⌥R)") {
+            session.resume()
+        }
+        .accessibilityIdentifier("menu.resume")
+
+        Button("Emergency Stop (⌃⌥.)") {
+            session.stop()
+        }
+        .accessibilityIdentifier("menu.startStop")
+
+        Button("Open Dashboard") {
+            openDashboard()
+        }
+        .accessibilityIdentifier("menu.openDashboard")
+    }
+
+    // MARK: - Dashboard
+
+    private func openDashboard(section: AppSidebarSection = .dashboard) {
+        session.requestOpenDashboard(section: section)
+        WindowPresenter.open(openWindow, id: "main")
     }
 }
