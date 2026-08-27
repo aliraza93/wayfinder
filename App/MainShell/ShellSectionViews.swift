@@ -475,9 +475,9 @@ private struct DiscoveryConfigureStepView: View {
                     }
                     if session.discoveryDurationPreset == .custom {
                         Stepper(
-                            "Custom: \(session.discoveryCustomMinutes) min",
-                            value: $session.discoveryCustomMinutes,
-                            in: 1...240
+                            "Custom: \(session.discoveryCustomHours) hr",
+                            value: $session.discoveryCustomHours,
+                            in: 1...72
                         )
                     }
 

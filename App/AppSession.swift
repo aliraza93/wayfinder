@@ -40,8 +40,8 @@ final class AppSession: ObservableObject {
     @Published private(set) var discoveryMessage = ""
     /// Scan → Review → Configure → Preview → Start wizard (no automation until Start).
     @Published var discoveryWizardStep: DiscoveryWizardStep = .scan
-    @Published var discoveryDurationPreset: RunDurationPreset = .tenMinutes
-    @Published var discoveryCustomMinutes: Int = 15
+    @Published var discoveryDurationPreset: RunDurationPreset = .oneHour
+    @Published var discoveryCustomHours: Int = 2
     @Published var discoveryDwellMinSeconds: Double = 30
     @Published var discoveryDwellMaxSeconds: Double = 180
     @Published var discoverySpeed: NavigationSpeedPreset = .normal
@@ -300,7 +300,7 @@ final class AppSession: ObservableObject {
         let cap: Double?
         switch discoveryDurationPreset {
         case .custom:
-            cap = Double(max(1, discoveryCustomMinutes)) * 60
+            cap = Double(max(1, discoveryCustomHours)) * 3_600
         case .untilStopped, .iterationsOnly:
             cap = nil
         default:
@@ -441,7 +441,7 @@ final class AppSession: ObservableObject {
         case .custom:
             workflow.loop.enabled = true
             workflow.loop.untilStopped = false
-            workflow.loop.maxDurationSeconds = Double(max(1, discoveryCustomMinutes)) * 60
+            workflow.loop.maxDurationSeconds = Double(max(1, discoveryCustomHours)) * 3_600
             workflow.loop.shuffleSteps = true
             workflow.loop.maxIterations = NavigationLimits.absoluteMaxIterations
         case .iterationsOnly:

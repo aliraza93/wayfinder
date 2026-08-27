@@ -50,7 +50,7 @@ struct WorkflowEditorView: View {
             guard !model.isSyncingFromStore else { return }
             model.pushDuration()
         }
-        .onChange(of: model.customDurationMinutes) { _ in
+        .onChange(of: model.customDurationHours) { _ in
             guard !model.isSyncingFromStore else { return }
             model.pushDuration()
         }
@@ -189,9 +189,9 @@ struct WorkflowEditorView: View {
 
                 if model.durationPreset == .custom {
                     Stepper(
-                        "Minutes: \(model.customDurationMinutes)",
-                        value: $model.customDurationMinutes,
-                        in: 1...720
+                        "Hours: \(model.customDurationHours)",
+                        value: $model.customDurationHours,
+                        in: 1...72
                     )
                 }
 
@@ -654,8 +654,8 @@ final class WorkflowEditorUIModel: ObservableObject {
     @Published var name: String = "Untitled"
     @Published var loopEnabled = false
     @Published var maxIterations = 1
-    @Published var durationPreset: RunDurationPreset = .oneMinute
-    @Published var customDurationMinutes = 15
+    @Published var durationPreset: RunDurationPreset = .oneHour
+    @Published var customDurationHours = 2
     @Published var shuffleSteps = true
     @Published var dwellMinSeconds: Double = 30
     @Published var dwellMaxSeconds: Double = 180
@@ -762,7 +762,7 @@ final class WorkflowEditorUIModel: ObservableObject {
     }
 
     func pushDuration() {
-        let customSeconds = Double(customDurationMinutes) * 60
+        let customSeconds = Double(customDurationHours) * 3_600
         viewModel.setDurationPreset(durationPreset, customSeconds: customSeconds)
         pushReviewSettings()
         syncFromVM(selectedName: selectedSavedName)
@@ -1025,7 +1025,7 @@ final class WorkflowEditorUIModel: ObservableObject {
         chromePreferredKeywordsText = viewModel.draft.review.chrome.preferredLinkKeywords.joined(separator: "\n")
         chromeExcludedPathsText = viewModel.draft.review.chrome.excludedPathPrefixes.joined(separator: "\n")
         if durationPreset == .custom, let seconds = viewModel.draft.maxDurationSeconds {
-            customDurationMinutes = max(1, Int((seconds / 60).rounded()))
+            customDurationHours = max(1, Int((seconds / 3_600).rounded()))
         }
         if let selectedName {
             selectedSavedName = selectedName

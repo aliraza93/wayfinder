@@ -170,7 +170,7 @@ public final class WorkflowEditorViewModel: @unchecked Sendable {
                 shuffleSteps: draft.shuffleSteps
             )
         case .custom:
-            let seconds = max(1, customSeconds ?? 60)
+            let seconds = max(3_600, customSeconds ?? 3_600)
             setLoop(
                 enabled: true,
                 maxIterations: NavigationLimits.absoluteMaxIterations,
@@ -179,7 +179,7 @@ public final class WorkflowEditorViewModel: @unchecked Sendable {
                 shuffleSteps: true
             )
             applyTimedReviewSteps()
-        case .oneMinute, .fiveMinutes, .tenMinutes, .thirtyMinutes, .oneHour:
+        case .oneHour, .twoHours, .fourHours, .eightHours:
             setLoop(
                 enabled: true,
                 maxIterations: NavigationLimits.absoluteMaxIterations,

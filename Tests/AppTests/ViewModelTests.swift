@@ -163,8 +163,8 @@ final class ViewModelTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: temp) }
         let store = ConfigStore(baseDirectory: temp)
         let vm = WorkflowEditorViewModel(store: store)
-        vm.setDurationPreset(.thirtyMinutes, customSeconds: nil)
-        XCTAssertEqual(vm.draft.maxDurationSeconds, 1_800)
+        vm.setDurationPreset(.twoHours, customSeconds: nil)
+        XCTAssertEqual(vm.draft.maxDurationSeconds, 7_200)
         XCTAssertFalse(vm.draft.untilStopped)
         vm.setDurationPreset(.untilStopped, customSeconds: nil)
         XCTAssertTrue(vm.draft.untilStopped)
