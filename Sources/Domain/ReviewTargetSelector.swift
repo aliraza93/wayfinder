@@ -108,6 +108,10 @@ public struct ReviewSessionController: Sendable {
     private var surfaceSwitchesOnApp: Int
     /// After this many surface switches, leave for another app (when ≥2 apps in queue).
     private var maxSurfaceSwitchesBeforeAppChange: Int
+    /// After open/switch, force a settle pause before review keys.
+    private var pendingPageSettle: Bool
+    /// Consecutive non-wait actions (feeds PacingController force-pause).
+    private var consecutiveActions: Int
     /// Smart Chrome crawl (nil when disabled or not on a browser target).
     public var chromeCrawl: ChromeCrawlSession?
     /// Session visit counts + lifecycle by identity key.
@@ -143,6 +147,8 @@ public struct ReviewSessionController: Sendable {
         self.surfaceSession = nil
         self.surfaceSwitchesOnApp = 0
         self.maxSurfaceSwitchesBeforeAppChange = Self.plannedSurfaceSwitches(for: queue)
+        self.pendingPageSettle = false
+        self.consecutiveActions = 0
         self.chromeCrawl = nil
         self.visited = .empty
         self.history = NavigationHistory()
@@ -157,6 +163,19 @@ public struct ReviewSessionController: Sendable {
         }
     }
 
+    private func makeChromeCrawl(now: Date) -> ChromeCrawlSession {
+        ChromeCrawlSession(
+            settings: settings.chrome,
+            pacing: settings.pacing,
+            pacingCustom: settings.pacingCustom,
+            now: now
+        )
+    }
+
+    private func paceGap(_ context: PacingContext) -> Double {
+        settings.gapSeconds(for: context)
+    }
+
     /// True when the engine should refresh the accessible page snapshot before the next pick.
     public var needsWebInspect: Bool {
         guard settings.chrome.enabled, currentAppClass() == .browser else { return false }
@@ -166,7 +185,7 @@ public struct ReviewSessionController: Sendable {
     /// Apply a best-effort page snapshot from Accessibility.
     public mutating func applyWebSnapshot(_ snapshot: WebPageSnapshot, now: Date = Date()) {
         if chromeCrawl == nil, settings.chrome.enabled {
-            chromeCrawl = ChromeCrawlSession(settings: settings.chrome, now: now)
+            chromeCrawl = makeChromeCrawl(now: now)
         }
         guard var session = chromeCrawl else { return }
         session.applySnapshot(snapshot, now: now)
@@ -225,6 +244,17 @@ public struct ReviewSessionController: Sendable {
             break
         }
 
+        if pendingPageSettle {
+            pendingPageSettle = false
+            consecutiveActions = 0
+            return TimedReviewPick(
+                action: .wait(seconds: 0.05),
+                gapSeconds: paceGap(.pageSettle),
+                metaKind: "pageSettle",
+                identity: current?.identity
+            )
+        }
+
         if let end = dwellEndsAt, now >= end {
             markCurrentCompleted(at: now)
             targetsCompleted += 1
@@ -260,9 +290,11 @@ public struct ReviewSessionController: Sendable {
         // Smart Chrome / browser crawl when enabled.
         if settings.chrome.enabled, currentAppClass() == .browser {
             if chromeCrawl == nil {
-                chromeCrawl = ChromeCrawlSession(settings: settings.chrome, now: now)
+                chromeCrawl = makeChromeCrawl(now: now)
             }
             if var session = chromeCrawl {
+                session.pacing = settings.pacing
+                session.pacingCustom = settings.pacingCustom
                 let decision = session.nextDecision(now: now)
                 chromeCrawl = session
                 if let pick = mapChromeDecision(decision, now: now) {
@@ -290,16 +322,20 @@ public struct ReviewSessionController: Sendable {
                 return completeTargetEarly(now: now, reasonAction: tick.action)
             }
             beginSurfaceSession(now: now)
+            pendingPageSettle = true
+            consecutiveActions = 0
             return TimedReviewPick(
                 action: tick.action,
-                gapSeconds: settings.randomInterFilePauseSeconds(),
+                gapSeconds: paceGap(.surfaceSwitch),
                 metaKind: "surfaceSwitched",
                 identity: current?.identity
             )
         }
+        consecutiveActions += 1
+        let weight = chromeCrawl?.pageReadWeight ?? max(0.4, Double(consecutiveDown) / 16.0)
         return TimedReviewPick(
             action: tick.action,
-            gapSeconds: settings.actionIntervalSeconds,
+            gapSeconds: paceGap(.review(weight: weight, scrolls: crawlStepsOnTarget, atEnd: atBoundary)),
             metaKind: tick.markedBoundary ? "reachedContentBoundary" : "navigationExecuted",
             identity: current?.identity
         )
@@ -380,7 +416,7 @@ public struct ReviewSessionController: Sendable {
                 existing.prepareForNewBrowserDwell(now: now)
                 chromeCrawl = existing
             } else {
-                chromeCrawl = ChromeCrawlSession(settings: settings.chrome, now: now)
+                chromeCrawl = makeChromeCrawl(now: now)
             }
         }
         // Keep chromeCrawl memory when rotating to Cursor/etc. so return visits stay fresh.
@@ -433,7 +469,7 @@ public struct ReviewSessionController: Sendable {
             dwellEndsAt = nil
             return TimedReviewPick(
                 action: reasonAction,
-                gapSeconds: max(0.2, settings.actionIntervalSeconds),
+                gapSeconds: paceGap(.surfaceSwitch),
                 metaKind: "boundarySwitchTarget",
                 identity: completedIdentity
             )
@@ -446,7 +482,7 @@ public struct ReviewSessionController: Sendable {
             }
             return TimedReviewPick(
                 action: reasonAction,
-                gapSeconds: settings.actionIntervalSeconds,
+                gapSeconds: paceGap(.surfaceSwitch),
                 metaKind: "boundarySwitchTarget",
                 identity: completedIdentity
             )
@@ -546,23 +582,39 @@ public struct ReviewSessionController: Sendable {
             consecutiveDown: consecutiveDown,
             pace: pace
         )
-        if tick.markedBoundary {
+        var resolved = tick
+        if isSurfaceSwitch(tick.action),
+           !PacingController.allowOpportunisticSurfaceHop(
+               profile: settings.pacing,
+               crawlSteps: crawlStepsOnTarget,
+               consecutiveDown: consecutiveDown
+           )
+        {
+            // Prefer finishing review over mid-dwell hops under Relaxed/Deliberate.
+            resolved = NavigationPlanner.CrawlTick(
+                action: consecutiveDown >= 4
+                    ? .pageNavigate(.pageUp)
+                    : .pageNavigate(.pageDown),
+                resetsDownStreak: consecutiveDown >= 4
+            )
+        }
+        if resolved.markedBoundary {
             atBoundary = true
-        } else if tick.resetsDownStreak {
+        } else if resolved.resetsDownStreak {
             atBoundary = false
             consecutiveDown = 0
-        } else if isDownward(tick.action) {
+        } else if isDownward(resolved.action) {
             consecutiveDown += 1
         } else {
             consecutiveDown = max(0, consecutiveDown - 1)
         }
         surfaceSession?.observe(
-            action: tick.action,
-            markedBoundary: tick.markedBoundary,
+            action: resolved.action,
+            markedBoundary: resolved.markedBoundary,
             settings: settings,
             now: now
         )
-        return tick
+        return resolved
     }
 
     private func isDownward(_ action: ActionKind) -> Bool {
@@ -579,7 +631,7 @@ public struct ReviewSessionController: Sendable {
             }
             return TimedReviewPick(
                 action: .activateApp(bundleID: id),
-                gapSeconds: max(0.5, settings.actionIntervalSeconds),
+                gapSeconds: paceGap(.navigation(weight: 0.5, consecutive: consecutiveActions)),
                 metaKind: "applicationFocused",
                 identity: current?.identity
             )
@@ -590,14 +642,14 @@ public struct ReviewSessionController: Sendable {
             }
             return TimedReviewPick(
                 action: .activateApp(bundleID: id),
-                gapSeconds: max(0.5, settings.actionIntervalSeconds),
+                gapSeconds: paceGap(.navigation(weight: 0.5, consecutive: consecutiveActions)),
                 metaKind: "applicationFocused",
                 identity: current?.identity
             )
         case .discoveredApp(let bundleID, _, _):
             return TimedReviewPick(
                 action: .activateApp(bundleID: bundleID),
-                gapSeconds: max(0.5, settings.actionIntervalSeconds),
+                gapSeconds: paceGap(.navigation(weight: 0.5, consecutive: consecutiveActions)),
                 metaKind: "applicationFocused",
                 identity: current?.identity
             )
@@ -607,19 +659,21 @@ public struct ReviewSessionController: Sendable {
     private mutating func selectSurfacePick() -> TimedReviewPick {
         enterPhase = .crawl
         beginSurfaceSession(now: Date())
+        pendingPageSettle = true
+        consecutiveActions = 0
         switch current! {
         case .editorFile(let path, _):
             if path.isEmpty {
                 return TimedReviewPick(
                     action: .explorerFileSwitch(direction: Bool.random() ? .next : .previous),
-                    gapSeconds: settings.randomInterFilePauseSeconds(),
+                    gapSeconds: paceGap(.surfaceSwitch),
                     metaKind: "fileSelected",
                     identity: current?.identity
                 )
             }
             return TimedReviewPick(
                 action: .openExistingFile(path: path),
-                gapSeconds: max(0.5, settings.actionIntervalSeconds),
+                gapSeconds: paceGap(.navigation(weight: 0.55)),
                 metaKind: "fileOpened",
                 identity: current?.identity
             )
@@ -627,7 +681,7 @@ public struct ReviewSessionController: Sendable {
             let direction: WindowDirection = (tabIndex % 2 == 0) ? .next : .previous
             return TimedReviewPick(
                 action: .switchTab(direction: direction),
-                gapSeconds: settings.randomInterFilePauseSeconds(),
+                gapSeconds: paceGap(.surfaceSwitch),
                 metaKind: "tabSelected",
                 identity: current?.identity
             )
@@ -636,20 +690,20 @@ public struct ReviewSessionController: Sendable {
             case .editor:
                 return TimedReviewPick(
                     action: .explorerFileSwitch(direction: Bool.random() ? .next : .previous),
-                    gapSeconds: settings.randomInterFilePauseSeconds(),
+                    gapSeconds: paceGap(.surfaceSwitch),
                     metaKind: "surfaceSelected",
                     identity: current?.identity
                 )
             case .browser:
                 return TimedReviewPick(
                     action: .switchTab(direction: Bool.random() ? .next : .previous),
-                    gapSeconds: settings.randomInterFilePauseSeconds(),
+                    gapSeconds: paceGap(.surfaceSwitch),
                     metaKind: "surfaceSelected",
                     identity: current?.identity
                 )
             case .finder, .generic:
                 return TimedReviewPick(
-                    action: .wait(seconds: max(0.2, settings.actionIntervalSeconds)),
+                    action: .wait(seconds: paceGap(.pageSettle)),
                     gapSeconds: 0.05,
                     metaKind: "surfaceSelected",
                     identity: current?.identity
@@ -661,9 +715,10 @@ public struct ReviewSessionController: Sendable {
     private mutating func mapChromeDecision(_ decision: ChromeCrawlDecision, now: Date) -> TimedReviewPick? {
         switch decision {
         case .inspect:
+            consecutiveActions = 0
             return TimedReviewPick(
                 action: .inspectWebPage,
-                gapSeconds: 0.15,
+                gapSeconds: paceGap(.pageSettle),
                 metaKind: "pageInspectRequested",
                 identity: current?.identity
             )
@@ -672,9 +727,15 @@ public struct ReviewSessionController: Sendable {
                 session.noteActivationCompleted()
                 chromeCrawl = session
             }
+            consecutiveActions += 1
+            pendingPageSettle = true
             return TimedReviewPick(
                 action: .activateWebNavTarget(identity: identity, x: x, y: y),
-                gapSeconds: max(0.6, settings.actionIntervalSeconds),
+                gapSeconds: paceGap(.navigation(
+                    weight: chromeCrawl?.pageReadWeight ?? 0.5,
+                    candidates: chromeCrawl?.pending.count ?? 0,
+                    consecutive: consecutiveActions
+                )),
                 metaKind: "webNavActivated",
                 identity: identity
             )
@@ -692,9 +753,14 @@ public struct ReviewSessionController: Sendable {
                 now: now
             )
             extendDwellForPageWeight(now: now)
+            consecutiveActions = 0
             return TimedReviewPick(
                 action: action,
-                gapSeconds: settings.actionIntervalSeconds,
+                gapSeconds: paceGap(.review(
+                    weight: chromeCrawl?.pageReadWeight ?? 0.5,
+                    scrolls: chromeCrawl?.scrollsOnPage ?? crawlStepsOnTarget,
+                    atEnd: atBoundary
+                )),
                 metaKind: "webKeyTraverse",
                 identity: chromeCrawl?.currentURL
             )
@@ -712,13 +778,16 @@ public struct ReviewSessionController: Sendable {
                 return completeTargetEarly(now: now, reasonAction: .switchTab(direction: direction))
             }
             beginSurfaceSession(now: now)
+            pendingPageSettle = true
+            consecutiveActions = 0
             return TimedReviewPick(
                 action: .switchTab(direction: direction),
-                gapSeconds: settings.randomInterFilePauseSeconds(),
+                gapSeconds: paceGap(.surfaceSwitch),
                 metaKind: "surfaceSwitched",
                 identity: current?.identity
             )
         case .wait(let seconds):
+            consecutiveActions = 0
             return TimedReviewPick(
                 action: .wait(seconds: seconds),
                 gapSeconds: 0.05,
@@ -733,11 +802,10 @@ public struct ReviewSessionController: Sendable {
     private mutating func beginSurfaceSession(now: Date) {
         atBoundary = false
         consecutiveDown = 0
-        let weight = chromeCrawl?.pageReadWeight ?? 0.4
-        let base = settings.randomFileDwellSeconds(distinctAppCount: distinctAppCount())
-        let scaled = min(
-            settings.dwellMaxSeconds,
-            max(settings.dwellMinSeconds * 0.35, base * (0.65 + weight))
+        let weight = chromeCrawl?.pageReadWeight ?? max(0.45, Double(consecutiveDown) / 20.0)
+        let scaled = settings.weightedFileDwellSeconds(
+            weight: weight,
+            distinctAppCount: distinctAppCount()
         )
         surfaceSession = AdaptiveSurfaceSession(now: now, durationSeconds: scaled)
     }
@@ -745,16 +813,15 @@ public struct ReviewSessionController: Sendable {
     /// Longer pages/files keep the app dwell open intelligently (capped).
     private mutating func extendDwellForPageWeight(now: Date) {
         let weight = chromeCrawl?.pageReadWeight ?? 0.4
-        guard weight >= 0.7, let end = dwellEndsAt else { return }
+        guard weight >= 0.55, let end = dwellEndsAt else { return }
         let remaining = end.timeIntervalSince(now)
-        // Only extend when the dwell would otherwise end soon while still reading.
-        guard remaining < 8 else { return }
-        let extra = settings.randomFileDwellExtensionSeconds() * min(1.4, weight)
+        guard remaining > 0 else { return }
+        let extra = settings.randomFileDwellExtensionSeconds() * min(1.5, weight)
         let cappedEnd = (dwellStartedAt ?? now).addingTimeInterval(settings.dwellMaxSeconds)
-        let proposed = now.addingTimeInterval(remaining + extra)
+        let proposed = end.addingTimeInterval(extra)
         dwellEndsAt = min(proposed, cappedEnd)
-        if var session = surfaceSession, !session.isExpired(at: now) {
-            session.endsAt = max(session.endsAt, now.addingTimeInterval(extra * 0.8))
+        if var session = surfaceSession {
+            session.endsAt = max(session.endsAt, now.addingTimeInterval(extra * 0.85))
             surfaceSession = session
         }
     }
@@ -772,8 +839,8 @@ public struct ReviewSessionController: Sendable {
     private static func plannedSurfaceSwitches(for queue: [ReviewTarget]) -> Int {
         let apps = Set(queue.map { appClassKey(of: $0) }).count
         guard apps >= 2 else { return Int.max }
-        // 1–2 file/tab hops, then force the next Target (e.g. Chrome).
-        return Int.random(in: 1...2)
+        // More within-app hops for variety before rotating to the other Target.
+        return Int.random(in: 3...6)
     }
 
     private static func appClassKey(of target: ReviewTarget) -> String {
@@ -792,19 +859,30 @@ public struct ReviewSessionController: Sendable {
 
     private mutating func switchSurfaceWithinApp(now: Date) -> TimedReviewPick {
         beginSurfaceSession(now: now)
+        pendingPageSettle = true
+        consecutiveActions = 0
         let classification = currentAppClass()
+        // Prefer next when this surface has been hopped more than previous (simple variety).
+        let preferNext = (surfaceSwitchesOnApp % 2 == 0) || Bool.random()
+        let direction: WindowDirection = preferNext ? .next : .previous
         let action: ActionKind
         switch classification {
         case .editor:
-            action = .explorerFileSwitch(direction: Bool.random() ? .next : .previous)
+            action = .explorerFileSwitch(direction: direction)
         case .browser:
-            action = .switchTab(direction: Bool.random() ? .next : .previous)
+            action = .switchTab(direction: direction)
         case .finder, .generic:
             action = .pageNavigate(.home)
         }
+        // Record hop against chrome page key when known so revisit tracking can prefer novelty.
+        if classification == .browser, let url = chromeCrawl?.currentURL, !url.isEmpty {
+            visited.markCompleted("surface:\(url)", at: now)
+        } else if classification == .editor {
+            visited.markCompleted("surface:editor:\(surfaceSwitchesOnApp)", at: now)
+        }
         return TimedReviewPick(
             action: action,
-            gapSeconds: settings.randomInterFilePauseSeconds(),
+            gapSeconds: paceGap(.surfaceSwitch),
             metaKind: "fileDwellComplete",
             identity: current?.identity
         )

@@ -680,7 +680,8 @@ extension ReviewWorkspaceSettings: Codable {
             allowed: [
                 "workspacePath", "filePaths", "chromeTabLabels",
                 "dwellMinSeconds", "dwellMaxSeconds",
-                "speed", "customIntervalSeconds", "targetOrder", "loopTargets",
+                "speed", "customIntervalSeconds", "pacing", "pacingCustom",
+                "targetOrder", "loopTargets",
                 "discoverRunningApps", "discovery", "refreshTargetsBetweenDwells",
                 "chrome",
             ],
@@ -694,14 +695,31 @@ extension ReviewWorkspaceSettings: Codable {
             ChromeNavigationSettings.self,
             forKey: StrictCodingKey(stringValue: "chrome")
         ) ?? .default
+        let pacingCustom = try container.decodeIfPresent(
+            NavigationPacingCustom.self,
+            forKey: StrictCodingKey(stringValue: "pacingCustom")
+        ) ?? .default
+        let legacySpeed = try? container.decode(
+            NavigationSpeedPreset.self,
+            forKey: StrictCodingKey(stringValue: "speed")
+        )
+        let decodedPacing = try? container.decode(
+            NavigationPacingProfile.self,
+            forKey: StrictCodingKey(stringValue: "pacing")
+        )
+        let pacing = decodedPacing ?? legacySpeed?.asPacingProfile ?? .relaxed
+        let customInterval = try StrictJSON.decodeIfPresentDouble(container, "customIntervalSeconds")
+            ?? pacingCustom.scrollIntervalSeconds
         var settings = ReviewWorkspaceSettings(
             workspacePath: (try? container.decode(String.self, forKey: StrictCodingKey(stringValue: "workspacePath"))) ?? "",
             filePaths: try container.decodeIfPresent([String].self, forKey: StrictCodingKey(stringValue: "filePaths")) ?? [],
             chromeTabLabels: try container.decodeIfPresent([String].self, forKey: StrictCodingKey(stringValue: "chromeTabLabels")) ?? [],
             dwellMinSeconds: try StrictJSON.decodeIfPresentDouble(container, "dwellMinSeconds") ?? 30,
             dwellMaxSeconds: try StrictJSON.decodeIfPresentDouble(container, "dwellMaxSeconds") ?? 180,
-            speed: (try? container.decode(NavigationSpeedPreset.self, forKey: StrictCodingKey(stringValue: "speed"))) ?? .normal,
-            customIntervalSeconds: try StrictJSON.decodeIfPresentDouble(container, "customIntervalSeconds") ?? 0.35,
+            pacing: pacing,
+            pacingCustom: pacingCustom,
+            speed: legacySpeed,
+            customIntervalSeconds: customInterval,
             targetOrder: (try? container.decode(ReviewTargetOrder.self, forKey: StrictCodingKey(stringValue: "targetOrder"))) ?? .sequential,
             loopTargets: try StrictJSON.decodeIfPresentBool(container, "loopTargets") ?? true,
             discoverRunningApps: try StrictJSON.decodeIfPresentBool(container, "discoverRunningApps") ?? false,
@@ -709,6 +727,9 @@ extension ReviewWorkspaceSettings: Codable {
             refreshTargetsBetweenDwells: try StrictJSON.decodeIfPresentBool(container, "refreshTargetsBetweenDwells") ?? false,
             chrome: chrome
         )
+        if pacing == .custom {
+            settings.pacingCustom.scrollIntervalSeconds = customInterval
+        }
         settings.normalize()
         self = settings
     }
@@ -720,6 +741,9 @@ extension ReviewWorkspaceSettings: Codable {
         try container.encode(chromeTabLabels, forKey: StrictCodingKey(stringValue: "chromeTabLabels"))
         try container.encode(dwellMinSeconds, forKey: StrictCodingKey(stringValue: "dwellMinSeconds"))
         try container.encode(dwellMaxSeconds, forKey: StrictCodingKey(stringValue: "dwellMaxSeconds"))
+        try container.encode(pacing, forKey: StrictCodingKey(stringValue: "pacing"))
+        try container.encode(pacingCustom, forKey: StrictCodingKey(stringValue: "pacingCustom"))
+        // Legacy Speed keys for older app builds that still read `speed`.
         try container.encode(speed, forKey: StrictCodingKey(stringValue: "speed"))
         try container.encode(customIntervalSeconds, forKey: StrictCodingKey(stringValue: "customIntervalSeconds"))
         try container.encode(targetOrder, forKey: StrictCodingKey(stringValue: "targetOrder"))
@@ -762,7 +786,43 @@ extension DiscoveryScope: Codable {
 }
 
 extension NavigationSpeedPreset: Codable {}
+extension NavigationPacingProfile: Codable {}
 extension ReviewTargetOrder: Codable {}
+
+extension NavigationPacingCustom: Codable {
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: StrictCodingKey.self)
+        try StrictJSON.requireKeys(
+            container,
+            allowed: [
+                "minReviewSeconds", "maxReviewSeconds",
+                "scrollIntervalSeconds", "navigationPauseSeconds",
+                "pageTransitionPauseSeconds", "maxConsecutiveActions",
+            ],
+            path: "review.pacingCustom"
+        )
+        var value = NavigationPacingCustom(
+            minReviewSeconds: try StrictJSON.decodeIfPresentDouble(container, "minReviewSeconds") ?? 20,
+            maxReviewSeconds: try StrictJSON.decodeIfPresentDouble(container, "maxReviewSeconds") ?? 300,
+            scrollIntervalSeconds: try StrictJSON.decodeIfPresentDouble(container, "scrollIntervalSeconds") ?? 1.4,
+            navigationPauseSeconds: try StrictJSON.decodeIfPresentDouble(container, "navigationPauseSeconds") ?? 1.8,
+            pageTransitionPauseSeconds: try StrictJSON.decodeIfPresentDouble(container, "pageTransitionPauseSeconds") ?? 2.0,
+            maxConsecutiveActions: (try? container.decode(Int.self, forKey: StrictCodingKey(stringValue: "maxConsecutiveActions"))) ?? 3
+        )
+        value.normalize()
+        self = value
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: StrictCodingKey.self)
+        try container.encode(minReviewSeconds, forKey: StrictCodingKey(stringValue: "minReviewSeconds"))
+        try container.encode(maxReviewSeconds, forKey: StrictCodingKey(stringValue: "maxReviewSeconds"))
+        try container.encode(scrollIntervalSeconds, forKey: StrictCodingKey(stringValue: "scrollIntervalSeconds"))
+        try container.encode(navigationPauseSeconds, forKey: StrictCodingKey(stringValue: "navigationPauseSeconds"))
+        try container.encode(pageTransitionPauseSeconds, forKey: StrictCodingKey(stringValue: "pageTransitionPauseSeconds"))
+        try container.encode(maxConsecutiveActions, forKey: StrictCodingKey(stringValue: "maxConsecutiveActions"))
+    }
+}
 
 extension ChromeNavigationSettings: Codable {
     public init(from decoder: Decoder) throws {

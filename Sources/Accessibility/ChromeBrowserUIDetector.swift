@@ -29,13 +29,17 @@ public enum ChromeBrowserUIDetector: Sendable {
         }
     }
 
-    /// Roles that are Chrome chrome even when names are empty.
-    private static let browserRoles: Set<String> = [
+    /// Roles that are always Chrome chrome (never page content).
+    private static let alwaysBrowserRoles: Set<String> = [
         "AXTab",
         "AXTabGroup",
         "AXToolbar",
         "AXMenuBar",
         "AXMenuBarItem",
+    ]
+
+    /// Menu roles that are chrome only when outside the WebArea (in-page menus stay pageContent).
+    private static let menuRolesUnlessInPage: Set<String> = [
         "AXMenu",
         "AXMenuItem",
     ]
@@ -46,7 +50,7 @@ public enum ChromeBrowserUIDetector: Sendable {
         center: CGPoint?,
         webArea: WebAreaBounds?
     ) -> WebNavSurface {
-        if browserRoles.contains(role) {
+        if alwaysBrowserRoles.contains(role) {
             return .browserUI
         }
         let mappedRole: WebNavRole
@@ -65,12 +69,14 @@ public enum ChromeBrowserUIDetector: Sendable {
                 return .browserUI
             }
             if !webArea.contains(x: Double(center.x), y: Double(center.y), inset: 0) {
-                // Outside web area (side chrome, bookmarks bar, etc.).
                 return .browserUI
             }
+            // In-page menus/menu items are navigational content.
             return .pageContent
         }
-        // Without a WebArea we cannot safely activate — treat as unknown (refuse later).
+        if menuRolesUnlessInPage.contains(role) {
+            return .browserUI
+        }
         return .unknown
     }
 
@@ -99,14 +105,28 @@ public enum ChromeBrowserUIDetector: Sendable {
         var windowsRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
               let windows = windowsRef as? [AXUIElement],
-              let window = windows.first
+              let window = preferredWindow(windows)
         else {
             return false
         }
         guard let web = findWebAreaBounds(in: window) else {
             return false
         }
-        return web.bounds.contains(x: x, y: y, inset: 4)
+        // Match inspector inset (0) so scored page-content clicks are not refused.
+        return web.bounds.contains(x: x, y: y, inset: 0)
+    }
+
+    private static func preferredWindow(_ windows: [AXUIElement]) -> AXUIElement? {
+        for window in windows.prefix(8) {
+            var mainRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(window, kAXMainAttribute as CFString, &mainRef) == .success,
+               let number = mainRef as? NSNumber,
+               number.boolValue
+            {
+                return window
+            }
+        }
+        return windows.first
     }
 
     // MARK: - AX helpers (shared with inspector)

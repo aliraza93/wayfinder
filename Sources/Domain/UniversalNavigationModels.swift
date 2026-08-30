@@ -163,6 +163,7 @@ public enum UniversalWorkflowBridge: Sendable {
         var settings = ReviewWorkspaceSettings(
             dwellMinSeconds: 30,
             dwellMaxSeconds: 180,
+            pacing: .relaxed,
             targetOrder: .applicationPriority,
             loopTargets: true,
             discoverRunningApps: true,

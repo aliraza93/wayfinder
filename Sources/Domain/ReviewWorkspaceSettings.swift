@@ -34,7 +34,66 @@ public enum ReviewTargetOrder: String, Equatable, Sendable, CaseIterable {
     }
 }
 
-/// Fixed navigation pacing (reading speed — not for imitating human activity).
+/// Deliberate navigation pacing profiles (not for imitating human activity monitors).
+public enum NavigationPacingProfile: String, Equatable, Sendable, CaseIterable, Identifiable {
+    case relaxed
+    case deliberate
+    case normal
+    case custom
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .relaxed: return "Relaxed"
+        case .deliberate: return "Deliberate"
+        case .normal: return "Normal"
+        case .custom: return "Custom"
+        }
+    }
+}
+
+/// User-tunable pacing when profile is `.custom`.
+public struct NavigationPacingCustom: Equatable, Sendable {
+    public var minReviewSeconds: Double
+    public var maxReviewSeconds: Double
+    public var scrollIntervalSeconds: Double
+    public var navigationPauseSeconds: Double
+    public var pageTransitionPauseSeconds: Double
+    public var maxConsecutiveActions: Int
+
+    public init(
+        minReviewSeconds: Double = 20,
+        maxReviewSeconds: Double = 300,
+        scrollIntervalSeconds: Double = 1.4,
+        navigationPauseSeconds: Double = 1.8,
+        pageTransitionPauseSeconds: Double = 2.0,
+        maxConsecutiveActions: Int = 3
+    ) {
+        self.minReviewSeconds = minReviewSeconds
+        self.maxReviewSeconds = maxReviewSeconds
+        self.scrollIntervalSeconds = scrollIntervalSeconds
+        self.navigationPauseSeconds = navigationPauseSeconds
+        self.pageTransitionPauseSeconds = pageTransitionPauseSeconds
+        self.maxConsecutiveActions = maxConsecutiveActions
+    }
+
+    public static let `default` = NavigationPacingCustom()
+
+    public mutating func normalize() {
+        minReviewSeconds = min(max(5, minReviewSeconds), 600)
+        maxReviewSeconds = min(max(10, maxReviewSeconds), 1_800)
+        if minReviewSeconds >= maxReviewSeconds {
+            maxReviewSeconds = minReviewSeconds + 1
+        }
+        scrollIntervalSeconds = min(max(0.2, scrollIntervalSeconds), 8)
+        navigationPauseSeconds = min(max(0.2, navigationPauseSeconds), 8)
+        pageTransitionPauseSeconds = min(max(0.2, pageTransitionPauseSeconds), 10)
+        maxConsecutiveActions = min(max(1, maxConsecutiveActions), 12)
+    }
+}
+
+/// Legacy speed labels kept for Codable migration of older workflows.
 public enum NavigationSpeedPreset: String, Equatable, Sendable, CaseIterable, Identifiable {
     case slow
     case normal
@@ -58,6 +117,16 @@ public enum NavigationSpeedPreset: String, Equatable, Sendable, CaseIterable, Id
         case .normal: return 0.35
         case .fast: return 0.12
         case .custom: return 0.35
+        }
+    }
+
+    /// Maps archived Speed values onto Navigation Pacing.
+    public var asPacingProfile: NavigationPacingProfile {
+        switch self {
+        case .slow: return .relaxed
+        case .normal: return .normal
+        case .fast: return .normal
+        case .custom: return .custom
         }
     }
 }
@@ -222,7 +291,12 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
     public var chromeTabLabels: [String]
     public var dwellMinSeconds: Double
     public var dwellMaxSeconds: Double
+    /// Navigation pacing profile (replaces legacy Speed).
+    public var pacing: NavigationPacingProfile
+    public var pacingCustom: NavigationPacingCustom
+    /// Legacy Speed field — synced from `pacing` for older readers; prefer `pacing`.
     public var speed: NavigationSpeedPreset
+    /// Legacy single interval — maps to custom scroll interval when pacing is `.custom`.
     public var customIntervalSeconds: Double
     public var targetOrder: ReviewTargetOrder
     public var loopTargets: Bool
@@ -240,8 +314,10 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
         chromeTabLabels: [String] = [],
         dwellMinSeconds: Double = 30,
         dwellMaxSeconds: Double = 180,
-        speed: NavigationSpeedPreset = .normal,
-        customIntervalSeconds: Double = 0.35,
+        pacing: NavigationPacingProfile? = nil,
+        pacingCustom: NavigationPacingCustom = .default,
+        speed: NavigationSpeedPreset? = nil,
+        customIntervalSeconds: Double = 1.4,
         targetOrder: ReviewTargetOrder = .sequential,
         loopTargets: Bool = true,
         discoverRunningApps: Bool = false,
@@ -254,7 +330,14 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
         self.chromeTabLabels = chromeTabLabels
         self.dwellMinSeconds = dwellMinSeconds
         self.dwellMaxSeconds = dwellMaxSeconds
-        self.speed = speed
+        let resolvedPacing = pacing ?? speed?.asPacingProfile ?? .relaxed
+        self.pacing = resolvedPacing
+        var custom = pacingCustom
+        if resolvedPacing == .custom {
+            custom.scrollIntervalSeconds = customIntervalSeconds
+        }
+        self.pacingCustom = custom
+        self.speed = speed ?? Self.legacySpeed(for: resolvedPacing)
         self.customIntervalSeconds = customIntervalSeconds
         self.targetOrder = targetOrder
         self.loopTargets = loopTargets
@@ -262,6 +345,14 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
         self.discovery = discovery
         self.refreshTargetsBetweenDwells = refreshTargetsBetweenDwells
         self.chrome = chrome
+    }
+
+    private static func legacySpeed(for pacing: NavigationPacingProfile) -> NavigationSpeedPreset {
+        switch pacing {
+        case .relaxed: return .slow
+        case .deliberate, .normal: return .normal
+        case .custom: return .custom
+        }
     }
 
     public static let `default` = ReviewWorkspaceSettings()
@@ -277,7 +368,13 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
         if dwellMinSeconds >= dwellMaxSeconds {
             dwellMaxSeconds = dwellMinSeconds + 1
         }
-        customIntervalSeconds = min(max(0.05, customIntervalSeconds), 5.0)
+        pacingCustom.normalize()
+        if pacing == .custom {
+            customIntervalSeconds = pacingCustom.scrollIntervalSeconds
+        } else {
+            customIntervalSeconds = min(max(0.05, customIntervalSeconds), 8.0)
+        }
+        speed = Self.legacySpeed(for: pacing)
         filePaths = filePaths
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -297,27 +394,34 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
         return (true, nil)
     }
 
+    /// Baseline review-phase gap (profile mid). Prefer `gapSeconds(for:)` for phase-aware pacing.
     public var actionIntervalSeconds: Double {
-        switch speed {
-        case .slow, .normal, .fast:
-            return speed.defaultIntervalSeconds
-        case .custom:
-            return customIntervalSeconds
-        }
+        PacingController.gapSeconds(
+            profile: pacing,
+            custom: pacingCustom,
+            context: .review(weight: 0.5)
+        )
+    }
+
+    public func gapSeconds(for context: PacingContext) -> Double {
+        PacingController.gapSeconds(
+            profile: pacing,
+            custom: pacingCustom,
+            context: context
+        )
     }
 
     public func randomDwellSeconds() -> Double {
         Double.random(in: dwellMinSeconds...dwellMaxSeconds)
     }
 
-    /// Smart per-app dwell: mid-biased random. With multiple apps, caps length so
-    /// Chrome/others get turns instead of one editor monopolizing the session.
+    /// Smart per-app dwell: mid-biased random. With multiple apps, soft-cap so others get turns
+    /// without starving long-file reading when the session is hours long.
     public func smartAppDwellSeconds(distinctAppCount: Int = 1) -> Double {
         let lo = dwellMinSeconds
         var hi = dwellMaxSeconds
         if distinctAppCount >= 2 {
-            // Prefer a few shorter hops across apps over one long stay.
-            hi = min(dwellMaxSeconds, max(dwellMinSeconds + 2, dwellMinSeconds * 1.85))
+            hi = min(dwellMaxSeconds, max(dwellMinSeconds + 15, dwellMinSeconds * 3.0))
         }
         if lo >= hi { return lo }
         let mid = (lo + hi) / 2
@@ -331,18 +435,44 @@ public struct ReviewWorkspaceSettings: Equatable, Sendable {
     /// Random reading time for one file/tab inside an app dwell (shorter than full target dwell).
     public func randomFileDwellSeconds(distinctAppCount: Int = 1) -> Double {
         let multi = distinctAppCount >= 2
-        let fileMin = max(3.0, dwellMinSeconds * (multi ? 0.25 : 0.35))
-        var fileMax = max(fileMin + 1.5, min(dwellMaxSeconds, dwellMaxSeconds * (multi ? 0.45 : 0.7)))
+        let fileMin = max(8.0, dwellMinSeconds * (multi ? 0.4 : 0.45))
+        // Soft share of session: long pages can use most of the dwell range even with multiple apps.
+        var fileMax = max(fileMin + 4, min(dwellMaxSeconds, dwellMaxSeconds * (multi ? 0.75 : 0.9)))
         if multi {
-            fileMax = min(fileMax, max(fileMin + 1.5, dwellMinSeconds * 0.95))
+            fileMax = min(fileMax, max(fileMin + 4, dwellMinSeconds * 2.2))
         }
         if fileMin >= fileMax { return fileMin }
         return Double.random(in: fileMin...fileMax)
     }
 
+    /// Content-weight-scaled file dwell (preferred over plain random when weight is known).
+    public func weightedFileDwellSeconds(
+        weight: Double,
+        distinctAppCount: Int = 1
+    ) -> Double {
+        let w = min(1.4, max(0.2, weight))
+        let bias = PacingController.reviewDurationBias(profile: pacing)
+        let multi = distinctAppCount >= 2
+        let fileMin = max(8.0, dwellMinSeconds * (multi ? 0.4 : 0.45))
+        var fileMax = max(fileMin + 4, min(dwellMaxSeconds, dwellMaxSeconds * (multi ? 0.75 : 0.9)))
+        if multi {
+            fileMax = min(fileMax, max(fileMin + 4, dwellMinSeconds * 2.2))
+        }
+        let midBase = fileMin >= fileMax ? fileMin : (fileMin + fileMax) / 2
+        let scaled = midBase * (0.55 + w) * bias
+        let paced = PacingController.reviewDurationSeconds(
+            profile: pacing,
+            custom: pacingCustom,
+            weight: w,
+            dwellMaxSeconds: dwellMaxSeconds
+        )
+        // Prefer weight ordering: blend structure mid-base with paced review span.
+        return min(dwellMaxSeconds, max(8, (scaled + paced) / 2))
+    }
+
     /// Pause after switching files/tabs before crawling the next one.
     public func randomInterFilePauseSeconds() -> Double {
-        Double.random(in: 0.4...2.2)
+        gapSeconds(for: .surfaceSwitch)
     }
 
     /// Extra seconds granted when content still seems long (heuristic).

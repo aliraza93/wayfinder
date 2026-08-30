@@ -206,8 +206,12 @@ public struct ChromePageInspector: Sendable {
                         )
                     )
                 default:
-                    // GitHub file rows sometimes appear as AXStaticText / AXCell with useful names.
-                    if looksLikeRepoEntry(name: name, href: href) {
+                    // In-page menus and GitHub file rows.
+                    if role == "AXMenuItem" || role == "AXMenu" {
+                        var navModel = model
+                        navModel.role = .navigation
+                        navigation.append(navModel)
+                    } else if looksLikeRepoEntry(name: name, href: href) {
                         var linkModel = model
                         linkModel.role = .link
                         links.append(linkModel)

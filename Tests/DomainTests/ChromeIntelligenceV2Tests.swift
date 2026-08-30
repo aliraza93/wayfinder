@@ -162,14 +162,14 @@ final class ChromeIntelligenceV2Tests: XCTestCase {
         XCTAssertGreaterThan(long.estimatedReadWeight, short.estimatedReadWeight)
     }
 
-    func testBlobPageScrollsOnlyAfterPendingEmpty() {
+    func testBlobPageReviewsBeforeOpeningSibling() {
         var settings = ChromeNavigationSettings(
             profile: .githubRepository,
             maxScrollsPerPage: 40,
             crawlSourceFiles: true
         )
         settings.normalize()
-        var session = ChromeCrawlSession(settings: settings, now: Date())
+        var session = ChromeCrawlSession(settings: settings, pacing: .relaxed, now: Date())
         let blob = WebPageSnapshot(
             url: "https://github.com/acme/app/blob/main/User.php",
             title: "User.php",
@@ -190,8 +190,14 @@ final class ChromeIntelligenceV2Tests: XCTestCase {
         session.applySnapshot(blob, now: Date())
         XCTAssertTrue(session.readingSource)
         let first = session.nextDecision(now: Date())
-        guard case .activate = first else {
-            return XCTFail("sibling source file should win over key traverse, got \(first)")
+        guard case .keyTraverse = first else {
+            return XCTFail("source review must finish before sibling activate, got \(first)")
+        }
+        // Exhaust key budget then sibling may activate.
+        session.scrollsOnPage = session.pageKeyBudget
+        let after = session.nextDecision(now: Date())
+        guard case .activate = after else {
+            return XCTFail("after review budget, sibling activate expected, got \(after)")
         }
     }
 
@@ -405,18 +411,80 @@ final class ChromeIntelligenceV2Tests: XCTestCase {
         XCTAssertGreaterThanOrEqual(switches, 2)
     }
 
-    func testPrepareForNewBrowserDwellKeepsVisitedMemory() {
-        var settings = ChromeNavigationSettings()
+    func testKeyTraverseOscillatesUpAndDown() {
+        var settings = ChromeNavigationSettings(profile: .githubRepository, maxScrollsPerPage: 80)
         settings.normalize()
         var session = ChromeCrawlSession(settings: settings, now: Date())
-        session.visitedURLs.insert("https://github.com/acme/app/blob/main/User.php")
-        session.visitedTargetKeys.insert("name:user.php")
-        session.visitedTabKeys.insert("https://github.com/acme/app")
+        let snap = WebPageSnapshot(
+            url: "https://github.com/acme/app/blob/main/Long.swift",
+            title: "Long.swift",
+            kind: .githubBlob
+        )
+        session.applySnapshot(snap, now: Date())
+        var sawUp = false
+        var sawDown = false
+        var sawHome = false
+        for _ in 0..<30 {
+            let decision = session.nextDecision(now: Date())
+            switch decision {
+            case .inspect:
+                session.applySnapshot(snap, now: Date())
+            case .keyTraverse(let motion):
+                switch motion {
+                case .home: sawHome = true
+                case .pageUp, .arrowUp: sawUp = true
+                case .pageDown, .arrowDown: sawDown = true
+                }
+            case .wait:
+                continue
+            default:
+                break
+            }
+        }
+        XCTAssertTrue(sawHome || sawDown)
+        XCTAssertTrue(sawUp, "must oscillate upward, not only PageDown")
+        XCTAssertTrue(sawDown)
+    }
+
+    func testGitHubProfileAllowsGithubDespiteOtherAllowlist() {
+        var settings = ChromeNavigationSettings(
+            profile: .githubRepository,
+            allowedDomains: ["twixrsolutions.com"],
+            externalDomainPolicy: .blocked
+        )
+        settings.normalize()
+        let policy = settings.domainPolicy(augmentingForURL: "https://twixrsolutions.com/docs")
+        XCTAssertTrue(
+            policy.allows(
+                href: "https://github.com/acme/app",
+                currentURL: "https://twixrsolutions.com/docs"
+            )
+        )
+    }
+
+    func testCompletedPageSkipsReKeyOnReturn() {
+        var settings = ChromeNavigationSettings(maxPages: 20, maxScrollsPerPage: 40)
+        settings.normalize()
+        var session = ChromeCrawlSession(settings: settings, now: Date())
+        let url = "https://example.com/done"
+        session.applySnapshot(WebPageSnapshot(url: url, title: "Done"), now: Date())
+        session.completedPageKeys.insert(URLNormalizer.normalize(url))
+        session.scrollsOnPage = 0
         session.pending = []
-        session.prepareForNewBrowserDwell(now: Date())
-        XCTAssertTrue(session.needsInspect)
-        XCTAssertTrue(session.visitedURLs.contains("https://github.com/acme/app/blob/main/User.php"))
-        XCTAssertTrue(session.visitedTargetKeys.contains("name:user.php"))
-        XCTAssertEqual(session.tabSwitchesAttempted, 0)
+        let decision = session.nextDecision(now: Date())
+        switch decision {
+        case .switchTab, .yieldToUniversal:
+            break
+        default:
+            XCTFail("expected tab switch or yield for completed page, got \(decision)")
+        }
+    }
+
+    func testWeightedDwellLongerThanShort() {
+        var settings = ReviewWorkspaceSettings(dwellMinSeconds: 30, dwellMaxSeconds: 180)
+        settings.normalize()
+        let short = settings.weightedFileDwellSeconds(weight: 0.3, distinctAppCount: 2)
+        let long = settings.weightedFileDwellSeconds(weight: 1.2, distinctAppCount: 2)
+        XCTAssertGreaterThan(long, short)
     }
 }

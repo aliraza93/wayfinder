@@ -92,9 +92,22 @@ public struct ChromeNavigationSettings: Equatable, Sendable {
 
     /// Derived domain gate used by the crawl filter.
     public var domainPolicy: DomainPolicy {
-        DomainPolicy(
+        domainPolicy(augmentingForURL: "")
+    }
+
+    /// Domain gate with profile-aware allowlist (GitHub profile always includes github.com).
+    public func domainPolicy(augmentingForURL url: String) -> DomainPolicy {
+        var domains = allowedDomains
+        let host = URLNormalizer.host(of: url)
+        let onGitHub = host == "github.com" || host.hasSuffix(".github.com")
+        if profile == .githubRepository || onGitHub {
+            if !domains.contains(where: { DomainPolicy.hostsMatch($0, "github.com") }) {
+                domains.append("github.com")
+            }
+        }
+        return DomainPolicy(
             currentDomainOnly: currentDomainOnly,
-            allowedDomains: allowedDomains,
+            allowedDomains: domains,
             blockedDomains: blockedDomains,
             allowExternalLinks: allowExternalLinks || externalDomainPolicy == .allowlist
         )

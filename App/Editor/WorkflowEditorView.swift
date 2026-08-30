@@ -223,7 +223,7 @@ struct WorkflowEditorView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Extras use conservative scroll/page only. Never clicks random coordinates.")
+                Text("Extras use conservative Page/Arrow keys only. Never clicks random coordinates.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -252,22 +252,75 @@ struct WorkflowEditorView: View {
                         step: 5
                     )
                 }
-                Picker("Speed", selection: $model.speedPreset) {
-                    ForEach(NavigationSpeedPreset.allCases) { preset in
+                Picker("Navigation Pacing", selection: $model.pacingProfile) {
+                    ForEach(NavigationPacingProfile.allCases) { preset in
                         Text(preset.title).tag(preset)
                     }
                 }
-                if model.speedPreset == .custom {
-                    HStack {
-                        Text("Interval (sec)")
-                        Spacer()
-                        TextField(
-                            "0.35",
-                            value: $model.customIntervalSeconds,
-                            format: .number.precision(.fractionLength(2))
-                        )
-                        .frame(width: 72)
-                        .textFieldStyle(.roundedBorder)
+                if model.pacingProfile == .custom {
+                    Group {
+                        HStack {
+                            Text("Min review (sec)")
+                            Spacer()
+                            Stepper(
+                                "\(Int(model.pacingCustom.minReviewSeconds))",
+                                value: $model.pacingCustom.minReviewSeconds,
+                                in: 5...600,
+                                step: 5
+                            )
+                        }
+                        HStack {
+                            Text("Max review (sec)")
+                            Spacer()
+                            Stepper(
+                                "\(Int(model.pacingCustom.maxReviewSeconds))",
+                                value: $model.pacingCustom.maxReviewSeconds,
+                                in: 10...1_800,
+                                step: 10
+                            )
+                        }
+                        HStack {
+                            Text("Scroll interval (sec)")
+                            Spacer()
+                            TextField(
+                                "1.4",
+                                value: $model.pacingCustom.scrollIntervalSeconds,
+                                format: .number.precision(.fractionLength(2))
+                            )
+                            .frame(width: 72)
+                            .textFieldStyle(.roundedBorder)
+                        }
+                        HStack {
+                            Text("Navigation pause (sec)")
+                            Spacer()
+                            TextField(
+                                "1.8",
+                                value: $model.pacingCustom.navigationPauseSeconds,
+                                format: .number.precision(.fractionLength(2))
+                            )
+                            .frame(width: 72)
+                            .textFieldStyle(.roundedBorder)
+                        }
+                        HStack {
+                            Text("Page transition (sec)")
+                            Spacer()
+                            TextField(
+                                "2.0",
+                                value: $model.pacingCustom.pageTransitionPauseSeconds,
+                                format: .number.precision(.fractionLength(2))
+                            )
+                            .frame(width: 72)
+                            .textFieldStyle(.roundedBorder)
+                        }
+                        HStack {
+                            Text("Max consecutive actions")
+                            Spacer()
+                            Stepper(
+                                "\(model.pacingCustom.maxConsecutiveActions)",
+                                value: $model.pacingCustom.maxConsecutiveActions,
+                                in: 1...12
+                            )
+                        }
                     }
                 }
                 Picker("Target order", selection: $model.targetOrder) {
@@ -285,8 +338,8 @@ struct WorkflowEditorView: View {
             .onChange(of: model.refreshTargetsBetweenDwells) { _ in model.pushReviewSettings() }
             .onChange(of: model.dwellMinSeconds) { _ in model.pushReviewSettings() }
             .onChange(of: model.dwellMaxSeconds) { _ in model.pushReviewSettings() }
-            .onChange(of: model.speedPreset) { _ in model.pushReviewSettings() }
-            .onChange(of: model.customIntervalSeconds) { _ in model.pushReviewSettings() }
+            .onChange(of: model.pacingProfile) { _ in model.pushReviewSettings() }
+            .onChange(of: model.pacingCustom) { _ in model.pushReviewSettings() }
             .onChange(of: model.targetOrder) { _ in model.pushReviewSettings() }
             .onChange(of: model.loopTargets) { _ in model.pushReviewSettings() }
         }
@@ -381,18 +434,9 @@ struct WorkflowEditorView: View {
                     Stepper("Max pages: \(model.chromeMaxPages)", value: $model.chromeMaxPages, in: 1...200)
                         .onChange(of: model.chromeMaxPages) { _ in model.pushReviewSettings() }
                 }
-                Stepper(
-                    "Max time per page: \(model.chromeMaxTimePerPageMinutes) min",
-                    value: $model.chromeMaxTimePerPageMinutes,
-                    in: 1...30
-                )
-                .onChange(of: model.chromeMaxTimePerPageMinutes) { _ in model.pushReviewSettings() }
-                Stepper(
-                    "Max scrolls per page: \(model.chromeMaxScrollsPerPage)",
-                    value: $model.chromeMaxScrollsPerPage,
-                    in: 5...200
-                )
-                .onChange(of: model.chromeMaxScrollsPerPage) { _ in model.pushReviewSettings() }
+                Text("Reading uses Page/Arrow keys (top ↔ bottom). Stay length scales with page structure automatically.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Toggle("Documentation", isOn: $model.chromeCrawlDocumentation)
                     .onChange(of: model.chromeCrawlDocumentation) { _ in model.pushReviewSettings() }
@@ -659,8 +703,8 @@ final class WorkflowEditorUIModel: ObservableObject {
     @Published var shuffleSteps = true
     @Published var dwellMinSeconds: Double = 30
     @Published var dwellMaxSeconds: Double = 180
-    @Published var speedPreset: NavigationSpeedPreset = .normal
-    @Published var customIntervalSeconds: Double = 0.35
+    @Published var pacingProfile: NavigationPacingProfile = .relaxed
+    @Published var pacingCustom: NavigationPacingCustom = .default
     @Published var targetOrder: ReviewTargetOrder = .sequential
     @Published var loopTargets = true
     @Published var discoverRunningApps = true
@@ -776,8 +820,9 @@ final class WorkflowEditorUIModel: ObservableObject {
         settings.chromeTabLabels = tabLabels
         settings.dwellMinSeconds = dwellMinSeconds
         settings.dwellMaxSeconds = dwellMaxSeconds
-        settings.speed = speedPreset
-        settings.customIntervalSeconds = customIntervalSeconds
+        settings.pacing = pacingProfile
+        settings.pacingCustom = pacingCustom
+        settings.customIntervalSeconds = pacingCustom.scrollIntervalSeconds
         settings.targetOrder = targetOrder
         settings.loopTargets = loopTargets
         settings.discoverRunningApps = discoverRunningApps
@@ -801,8 +846,8 @@ final class WorkflowEditorUIModel: ObservableObject {
         chrome.externalDomainPolicy = chromeExternalPolicy
         chrome.maxDepth = chromeMaxDepth
         chrome.maxPages = chromeMaxPages
-        chrome.maxTimePerPageSeconds = Double(chromeMaxTimePerPageMinutes) * 60
-        chrome.maxScrollsPerPage = chromeMaxScrollsPerPage
+        chrome.maxTimePerPageSeconds = 600
+        chrome.maxScrollsPerPage = 80
         chrome.crawlDocumentation = chromeCrawlDocumentation
         chrome.crawlSourceFiles = chromeCrawlSourceFiles
         chrome.crawlRepositoryDirectories = chromeCrawlDirectories
@@ -990,8 +1035,8 @@ final class WorkflowEditorUIModel: ObservableObject {
         shuffleSteps = viewModel.draft.shuffleSteps
         dwellMinSeconds = viewModel.draft.review.dwellMinSeconds
         dwellMaxSeconds = viewModel.draft.review.dwellMaxSeconds
-        speedPreset = viewModel.draft.review.speed
-        customIntervalSeconds = viewModel.draft.review.customIntervalSeconds
+        pacingProfile = viewModel.draft.review.pacing
+        pacingCustom = viewModel.draft.review.pacingCustom
         targetOrder = viewModel.draft.review.targetOrder
         loopTargets = viewModel.draft.review.loopTargets
         discoverRunningApps = viewModel.draft.review.discoverRunningApps

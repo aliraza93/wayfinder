@@ -8,8 +8,10 @@ public enum HonestCopy {
     public static let does = """
     Universal Workspace Navigation crawls only the apps you add as Targets (e.g. Cursor + Chrome). \
     Optionally it can also include open Finder/Preview/other apps you enable — never System Settings. \
-    Focus → select surface → crawl for a dwell → next, until the session ends. Chrome can inspect \
-    accessible page structure and follow safe same-domain links for docs and repositories.
+    Focus → open/switch a surface (Navigation) → deliberate key review (Review) → next, until the session ends. \
+    Default Navigation Pacing is Relaxed. Reading uses Home / Page / Arrow keys (top ↔ mid ↔ bottom). \
+    Chrome inspects page structure and follows safe menus, docs links, and GitHub directories — then \
+    reviews each opened source file before opening the next — never submit or browser chrome.
     """
 
     public static let neverDoes = """
@@ -21,15 +23,15 @@ public enum HonestCopy {
 
     public static let permissionWhy = """
     Accessibility permission lets \(ProductIdentity.displayName) verify the frontmost app and perform \
-    read-only navigation (scroll, page/arrow keys, allowlisted tab/explorer navigation, content clicks, \
+    read-only navigation (page/arrow keys, allowlisted tab/explorer navigation, content clicks, \
     and best-effort page structure for safe link clicks) — nothing that rewrites your source.
     """
 
     public static let tabFileLimits = """
     Configure workspace files and Chrome tab labels when you want fixed queues; otherwise Targets \
-    drive Cursor↔Chrome. Chrome profiles control docs/GitHub crawl depth and allowed domains. \
-    Per-file reading time adapts: short content switches sooner, longer skims stay longer, with \
-    a random pause between file/tab changes.
+    drive Cursor↔Chrome and already-visited surfaces are skipped when possible. GitHub profile \
+    allows github.com automatically. Navigation Pacing (Relaxed by default) scales pauses and stay \
+    length with page/file structure: short content leaves sooner; longer pages keep keying longer.
     """
 }
 

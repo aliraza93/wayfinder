@@ -83,7 +83,9 @@ public enum WebElementClassifier: Sendable {
         }
         let onGitHubTree = pageKind == .githubTree || pageKind == .githubRepoRoot || pageKind == .githubOther
         if path.contains("/tree/")
-            || (onGitHubTree && (lowerName.hasSuffix("/") || looksLikeDirectoryName(lowerName)))
+            || (onGitHubTree && (lowerName.hasSuffix("/") || looksLikeDirectoryName(lowerName)
+                || (!lowerName.contains(".") && !lowerName.isEmpty && lowerName.count <= 48
+                    && !lowerName.contains(" "))))
         {
             return .repositoryDirectory
         }
@@ -113,7 +115,13 @@ public enum WebElementClassifier: Sendable {
         }
 
         if role == .button {
-            // Unclassified buttons are never activated.
+            // Nav-like page buttons (docs sidebar, menus) — not submit/actions.
+            if Self.isNavLikeButton(name: lowerName) {
+                if pageKind == .documentation || lowerName.contains("doc") || lowerName.contains("guide") {
+                    return .documentationLink
+                }
+                return .internalNavigation
+            }
             return .actionButton
         }
 
@@ -148,8 +156,27 @@ public enum WebElementClassifier: Sendable {
             "database", "resources", "public", "docs", "documentation",
             "packages", "components", "models", "controllers", "middleware",
             "views", "scripts", "bin", "cmd", "pkg", "internal",
+            "http", "services", "utils", "helpers", "types", "hooks",
+            "store", "stores", "api", "core", "shared", "common",
         ]
         return known.contains(lower)
+    }
+
+    /// In-page nav affordances that are not submit/purchase/auth actions.
+    private static func isNavLikeButton(name: String) -> Bool {
+        if name.isEmpty { return false }
+        if name.contains("submit") || name.contains("sign") || name.contains("log in")
+            || name.contains("buy") || name.contains("checkout") || name.contains("delete")
+            || name.contains("save") || name.contains("send") || name.contains("post ")
+        {
+            return false
+        }
+        return name.contains("nav") || name.contains("menu") || name.contains("sidebar")
+            || name.contains("docs") || name.contains("guide") || name.contains("reference")
+            || name.contains("getting started") || name.contains("api")
+            || name.contains("next") || name.contains("previous") || name.contains("prev")
+            || name.contains("contents") || name.contains("section")
+            || name.contains("chapter") || name.contains("learn")
     }
 
     private static func isSameRegistrableDomain(_ a: String, _ b: String) -> Bool {

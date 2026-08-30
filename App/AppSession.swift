@@ -44,7 +44,7 @@ final class AppSession: ObservableObject {
     @Published var discoveryCustomHours: Int = 2
     @Published var discoveryDwellMinSeconds: Double = 30
     @Published var discoveryDwellMaxSeconds: Double = 180
-    @Published var discoverySpeed: NavigationSpeedPreset = .normal
+    @Published var discoveryPacing: NavigationPacingProfile = .relaxed
     @Published var discoveryTargetOrder: ReviewTargetOrder = .applicationPriority
     @Published var discoveryAllowedDomainsText = ""
     @Published var discoveryBlockedDomainsText = ""
@@ -420,7 +420,7 @@ final class AppSession: ObservableObject {
         UniversalWorkflowBridge.applyUniversalRuntimeFlags(&review)
         review.dwellMinSeconds = discoveryDwellMinSeconds
         review.dwellMaxSeconds = discoveryDwellMaxSeconds
-        review.speed = discoverySpeed
+        review.pacing = discoveryPacing
         review.targetOrder = discoveryTargetOrder
         review.chrome.allowedDomains = discoveryAllowedDomainsText
             .split(whereSeparator: \.isNewline)

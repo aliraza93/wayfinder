@@ -87,6 +87,7 @@ final class UniversalNavigationTests: XCTestCase {
             .active
         )
         _ = controller.nextPick(now: now) // select surface → crawl
+        _ = controller.nextPick(now: now) // page settle after open/switch
         _ = controller.nextPick(now: now.addingTimeInterval(10)) // dwell expired → next
         XCTAssertEqual(controller.targetsCompleted, 1)
         XCTAssertTrue(controller.visited.hasVisited("app:com.todesktop.230313mzl4w4u92"))

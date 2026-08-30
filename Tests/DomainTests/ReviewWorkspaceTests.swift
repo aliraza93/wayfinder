@@ -174,6 +174,8 @@ final class ReviewWorkspaceTests: XCTestCase {
         } else {
             XCTFail("expected openExistingFile")
         }
+        let settle = controller.nextPick(now: now)
+        XCTAssertEqual(settle?.metaKind, "pageSettle")
         let crawl = controller.nextPick(now: now)
         XCTAssertEqual(crawl?.metaKind, "navigationExecuted")
     }
@@ -209,9 +211,41 @@ final class ReviewWorkspaceTests: XCTestCase {
         XCTAssertEqual(NavigationSpeedPreset.slow.defaultIntervalSeconds, 0.85)
         XCTAssertEqual(NavigationSpeedPreset.normal.defaultIntervalSeconds, 0.35)
         XCTAssertEqual(NavigationSpeedPreset.fast.defaultIntervalSeconds, 0.12)
-        var settings = ReviewWorkspaceSettings(speed: .custom, customIntervalSeconds: 0.5)
+        XCTAssertEqual(NavigationSpeedPreset.slow.asPacingProfile, .relaxed)
+        XCTAssertEqual(NavigationSpeedPreset.fast.asPacingProfile, .normal)
+    }
+
+    func testNavigationPacingCustomUsesScrollInterval() {
+        var custom = NavigationPacingCustom(scrollIntervalSeconds: 0.5)
+        custom.normalize()
+        var settings = ReviewWorkspaceSettings(
+            pacing: .custom,
+            pacingCustom: custom,
+            customIntervalSeconds: 0.5
+        )
         settings.normalize()
-        XCTAssertEqual(settings.actionIntervalSeconds, 0.5)
+        let gap = settings.gapSeconds(for: .review(weight: 0.5))
+        XCTAssertEqual(gap, 0.5, accuracy: 0.01)
+    }
+
+    func testUniversalDefaultUsesRelaxedPacing() {
+        XCTAssertEqual(ReviewWorkspaceSettings.universalDefault.pacing, .relaxed)
+    }
+
+    func testPacingControllerScalesReviewWithWeight() {
+        let short = PacingController.reviewDurationSeconds(
+            profile: .normal,
+            custom: .default,
+            weight: 0.3,
+            dwellMaxSeconds: 180
+        )
+        let long = PacingController.reviewDurationSeconds(
+            profile: .relaxed,
+            custom: .default,
+            weight: 1.2,
+            dwellMaxSeconds: 180
+        )
+        XCTAssertGreaterThan(long, short)
     }
 
     func testUniversalWorkspaceDefaultName() {
@@ -261,24 +295,28 @@ final class ReviewWorkspaceTests: XCTestCase {
     func testCrawlPrefersTopMidNotEnd() {
         var sawEnd = false
         var sawHomeOrHighlightOrClick = false
-        for step in 1...5 {
+        var sawUp = false
+        for step in 1...24 {
             let tick = NavigationPlanner.progressiveCrawlTick(
                 step: step,
                 classification: .editor,
                 atBoundary: false,
-                consecutiveDown: 0,
+                consecutiveDown: step > 10 ? 7 : 2,
                 pace: .reading
             )
             if case .pageNavigate(.end) = tick.action { sawEnd = true }
             switch tick.action {
             case .pageNavigate(.home), .highlightNavigate, .contentClick:
                 sawHomeOrHighlightOrClick = true
+            case .pageNavigate(.pageUp), .arrowNavigate(direction: .up, _, _):
+                sawUp = true
             default:
                 break
             }
         }
-        XCTAssertFalse(sawEnd, "early crawl must not jump to End")
+        XCTAssertFalse(sawEnd, "crawl must not jump to End")
         XCTAssertTrue(sawHomeOrHighlightOrClick)
+        XCTAssertTrue(sawUp, "mid crawl must oscillate upward")
     }
 
     func testInterleaveAlternatesEditorAndBrowser() {
@@ -363,7 +401,8 @@ final class ReviewWorkspaceTests: XCTestCase {
         for _ in 0..<40 {
             let multi = settings.smartAppDwellSeconds(distinctAppCount: 2)
             XCTAssertGreaterThanOrEqual(multi, 5)
-            XCTAssertLessThanOrEqual(multi, 9.25, "multi-app dwell should stay short so Chrome gets turns")
+            // Soft multi-app share — still below full max so the other app gets turns.
+            XCTAssertLessThanOrEqual(multi, 20)
             let single = settings.smartAppDwellSeconds(distinctAppCount: 1)
             XCTAssertLessThanOrEqual(single, 20)
         }

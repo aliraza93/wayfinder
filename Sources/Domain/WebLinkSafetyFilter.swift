@@ -105,6 +105,6 @@ public enum WebLinkSafetyFilter: Sendable {
         currentURL: String,
         settings: ChromeNavigationSettings
     ) -> Bool {
-        settings.domainPolicy.allows(href: href, currentURL: currentURL)
+        settings.domainPolicy(augmentingForURL: currentURL).allows(href: href, currentURL: currentURL)
     }
 }

@@ -30,10 +30,11 @@ public enum WebLinkScorer: Sendable {
             return copy
         }()
 
+        let policy = settings.domainPolicy(augmentingForURL: snapshot.url)
         let safe = WebLinkSafetyFilter.isActivatable(
             element: classified,
             currentURL: snapshot.url,
-            policy: settings.domainPolicy
+            policy: policy
         ) && depth <= settings.maxDepth
             && !settings.excludedPathPrefixes.contains { prefix in
                 normalized.lowercased().contains(prefix.lowercased())
@@ -47,7 +48,7 @@ public enum WebLinkScorer: Sendable {
         var priority = 0
         if safe { priority += 10 }
         if !alreadyVisited { priority += 8 }
-        if settings.domainPolicy.allows(href: href, currentURL: snapshot.url) { priority += 6 }
+        if policy.allows(href: href, currentURL: snapshot.url) { priority += 6 }
 
         let name = classified.name.lowercased()
         let path = normalized.lowercased()
@@ -91,8 +92,8 @@ public enum WebLinkScorer: Sendable {
         }
 
         switch classified.classification {
+        case .repositoryDirectory: priority += 115
         case .sourceCodeFile: priority += 100
-        case .repositoryDirectory: priority += 100
         case .documentationLink, .tableOfContents: priority += 90
         case .internalNavigation: priority += 70
         case .articleLink: priority += 70

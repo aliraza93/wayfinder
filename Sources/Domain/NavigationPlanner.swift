@@ -104,18 +104,25 @@ public enum NavigationPlanner: Sendable {
         case .configuredPriority:
             return queue
         case .applicationPriority:
-            return orderByApplicationPriority(queue)
+            // Prefer app priority, then least-visited for variety within the same class.
+            return orderByApplicationPriority(queue, visited: visited)
         case .targetRotation:
             return orderForRotation(queue, visited: visited)
         }
     }
 
-    /// Prefer Cursor → Chrome → Finder → Preview → Safari → others, then display name.
-    public static func orderByApplicationPriority(_ queue: [ReviewTarget]) -> [ReviewTarget] {
+    /// Prefer Cursor → Chrome → Finder → Preview → Safari → others, then least-visited, then name.
+    public static func orderByApplicationPriority(
+        _ queue: [ReviewTarget],
+        visited: VisitedTargetTracker = .empty
+    ) -> [ReviewTarget] {
         queue.sorted { a, b in
             let pa = applicationPriority(of: a)
             let pb = applicationPriority(of: b)
             if pa != pb { return pa < pb }
+            let va = visited.visitCount(for: identityKey(a))
+            let vb = visited.visitCount(for: identityKey(b))
+            if va != vb { return va < vb }
             return a.identity.localizedCaseInsensitiveCompare(b.identity) == .orderedAscending
         }
     }
@@ -239,7 +246,7 @@ public enum NavigationPlanner: Sendable {
         }
     }
 
-    /// Randomized progressive crawl. Prefers top/middle; avoids racing to End.
+    /// Randomized progressive crawl. Oscillates top ↔ mid ↔ bottom with keys; never End / scroll-wheel.
     public static func progressiveCrawlTick(
         step: Int,
         classification: TargetAppClass,
@@ -250,18 +257,18 @@ public enum NavigationPlanner: Sendable {
         let conservative = (classification == .generic || classification == .finder)
         let roll = Int.random(in: 0..<100)
 
-        // Fresh file: settle at top / upper mid — highlight, small moves (no End/PageDown spam).
+        // Fresh file: settle at top.
         if step <= 4 {
             if step == 1 {
                 return CrawlTick(action: .pageNavigate(.home), resetsDownStreak: true)
             }
-            // Browsers never use geometric contentClick (hits Chrome chrome).
-            if classification != .browser, !conservative, roll < 55 {
+            if classification != .browser, !conservative, roll < 40 {
                 return CrawlTick(action: .contentClick, resetsDownStreak: true)
             }
-            if classification != .browser, !conservative, roll < 80 {
+            if classification != .browser, !conservative, roll < 70 {
                 return CrawlTick(action: .highlightNavigate(direction: .down), resetsDownStreak: true)
             }
+            // Mild down then soon oscillate — no PageDown spam in settle.
             return CrawlTick(
                 action: .arrowNavigate(direction: .down, presses: 1, intervalSeconds: 0)
             )
@@ -285,9 +292,9 @@ public enum NavigationPlanner: Sendable {
             return CrawlTick(action: .pageNavigate(.home), resetsDownStreak: true)
         }
 
-        // Too much downward motion: pull back to top/middle instead of End.
-        if consecutiveDown >= 10 {
-            if roll < 45 {
+        // Soft boundary: too much downward motion → pull back to top/middle (never End).
+        if consecutiveDown >= 6 {
+            if roll < 40 {
                 return CrawlTick(action: .pageNavigate(.home), resetsDownStreak: true)
             }
             if roll < 75 {
@@ -299,57 +306,57 @@ public enum NavigationPlanner: Sendable {
             )
         }
 
-        // Mid-file variety: highlight lines, page/arrow keys — never scroll-wheel in default crawl.
-        // Never geometric contentClick in browsers (Chrome toolbar / tab strip risk).
-        if classification != .browser, !conservative, roll < 18 {
-            return CrawlTick(action: .contentClick, resetsDownStreak: true)
-        }
-        if classification != .browser, !conservative, roll < 32 {
-            let dir: ArrowDirection = Bool.random() ? .down : .up
-            return CrawlTick(action: .highlightNavigate(direction: dir), resetsDownStreak: dir == .up)
-        }
-        if roll < 42 {
+        // Oscillate by step phase: down stretch → up stretch → mid variety.
+        let phase = (step - 5) % 8
+        switch phase {
+        case 0, 1:
+            if classification != .browser, !conservative, roll < 25 {
+                return CrawlTick(action: .highlightNavigate(direction: .down))
+            }
+            return CrawlTick(
+                action: roll < 55
+                    ? .pageNavigate(.pageDown)
+                    : .arrowNavigate(direction: .down, presses: Int.random(in: 1...3), intervalSeconds: 0)
+            )
+        case 2:
+            return CrawlTick(
+                action: .arrowNavigate(direction: .down, presses: Int.random(in: 1...2), intervalSeconds: 0)
+            )
+        case 3, 4:
+            return CrawlTick(
+                action: roll < 60
+                    ? .pageNavigate(.pageUp)
+                    : .arrowNavigate(direction: .up, presses: Int.random(in: 2...4), intervalSeconds: 0),
+                resetsDownStreak: true
+            )
+        case 5:
             return CrawlTick(
                 action: .arrowNavigate(direction: .up, presses: Int.random(in: 1...3), intervalSeconds: 0),
                 resetsDownStreak: true
             )
-        }
-        if roll < 55 {
-            return CrawlTick(
-                action: .arrowNavigate(direction: .up, presses: Int.random(in: 2...4), intervalSeconds: 0),
-                resetsDownStreak: true
-            )
-        }
-        // Prefer Page Down for longer progress; arrows for fine movement.
-        if pace == .longContent {
-            if roll < 78 {
-                return CrawlTick(action: .pageNavigate(.pageDown))
+        case 6:
+            if classification != .browser, !conservative, roll < 35 {
+                let dir: ArrowDirection = Bool.random() ? .down : .up
+                return CrawlTick(action: .highlightNavigate(direction: dir), resetsDownStreak: dir == .up)
+            }
+            if classification != .browser, !conservative, roll < 55 {
+                return CrawlTick(action: .contentClick, resetsDownStreak: true)
+            }
+            return CrawlTick(action: .pageNavigate(.pageDown))
+        default:
+            if !conservative, step > 14, roll < 30 {
+                return CrawlTick(
+                    action: surfaceSwitchAction(classification: classification),
+                    resetsDownStreak: true
+                )
             }
             return CrawlTick(
-                action: .arrowNavigate(direction: .down, presses: Int.random(in: 2...4), intervalSeconds: 0)
-            )
-        }
-        if roll < 72, consecutiveDown < 8 {
-            return CrawlTick(action: .pageNavigate(.pageDown))
-        }
-        if roll < 88 {
-            return CrawlTick(
-                action: .arrowNavigate(direction: .down, presses: Int.random(in: 1...3), intervalSeconds: 0)
-            )
-        }
-        if !conservative, step > 14, roll < 94 {
-            return CrawlTick(
-                action: surfaceSwitchAction(classification: classification),
+                action: roll < 50
+                    ? .pageNavigate(.home)
+                    : .arrowNavigate(direction: .up, presses: Int.random(in: 1...2), intervalSeconds: 0),
                 resetsDownStreak: true
             )
         }
-        return CrawlTick(
-            action: .arrowNavigate(
-                direction: .down,
-                presses: 1,
-                intervalSeconds: 0
-            )
-        )
     }
 
     /// Backward-compatible helper (tests / seeds). Prefer `progressiveCrawlTick`.

@@ -16,6 +16,7 @@ public enum ChromeCrawlDecision: Equatable, Sendable {
 
 /// Inert keyboard motions used to read page/file content.
 public enum ChromeReadMotion: Equatable, Sendable {
+    case home
     case pageDown
     case pageUp
     case arrowDown(presses: Int)
@@ -23,6 +24,8 @@ public enum ChromeReadMotion: Equatable, Sendable {
 
     public var asAction: ActionKind {
         switch self {
+        case .home:
+            return .pageNavigate(.home)
         case .pageDown:
             return .pageNavigate(.pageDown)
         case .pageUp:
@@ -37,7 +40,7 @@ public enum ChromeReadMotion: Equatable, Sendable {
     public var isDownward: Bool {
         switch self {
         case .pageDown, .arrowDown: return true
-        case .pageUp, .arrowUp: return false
+        case .home, .pageUp, .arrowUp: return false
         }
     }
 }
@@ -82,6 +85,8 @@ public struct ChromeCrawlSession: Sendable {
     public var visitedTabKeys: Set<String>
     /// Keys activated this run (including name-only file targets).
     public var visitedTargetKeys: Set<String>
+    /// Pages fully reviewed this run — skip re-keying when Ctrl+Tab returns.
+    public var completedPageKeys: Set<String>
     /// Pending activate whose URL we expect after the next inspect.
     public var awaitingNavigationTo: String?
     /// Consecutive activations that did not change the page URL.
@@ -98,16 +103,26 @@ public struct ChromeCrawlSession: Sendable {
     public var pageKeyBudget: Int
     /// Soft max seconds for the current page (scales with weight).
     public var pageTimeBudgetSeconds: Double
+    /// Workspace pacing profile (from ReviewWorkspaceSettings).
+    public var pacing: NavigationPacingProfile
+    public var pacingCustom: NavigationPacingCustom
+    /// Consecutive nav activates without a review/wait (forces paced pause).
+    public var consecutiveNavActions: Int
     /// BFS queue vs DFS stack controlled by strategy when enqueueing.
     private var pendingIsStack: Bool
     /// Max key moves while reviewing a source file / long article before seeking next nav target.
-    private static let minSourceReviewKeys = 4
-    private static let maxSourceReviewKeys = 18
+    private static let minSourceReviewKeys = 8
+    private static let maxSourceReviewKeys = 48
     /// Reveal key moves when no candidates — keep bounded to force tab/file variety.
-    private static let minRevealKeys = 2
-    private static let maxRevealKeys = 8
+    private static let minRevealKeys = 4
+    private static let maxRevealKeys = 24
 
-    public init(settings: ChromeNavigationSettings, now: Date = Date()) {
+    public init(
+        settings: ChromeNavigationSettings,
+        pacing: NavigationPacingProfile = .relaxed,
+        pacingCustom: NavigationPacingCustom = .default,
+        now: Date = Date()
+    ) {
         var normalized = settings
         normalized.normalize()
         self.settings = normalized
@@ -129,6 +144,7 @@ public struct ChromeCrawlSession: Sendable {
         self.maxTabSwitches = 12
         self.visitedTabKeys = []
         self.visitedTargetKeys = []
+        self.completedPageKeys = []
         self.awaitingNavigationTo = nil
         self.stuckActivationCount = 0
         self.tabGroups = []
@@ -138,6 +154,9 @@ public struct ChromeCrawlSession: Sendable {
         self.pageReadWeight = 0.4
         self.pageKeyBudget = Self.minRevealKeys
         self.pageTimeBudgetSeconds = normalized.maxTimePerPageSeconds
+        self.pacing = pacing
+        self.pacingCustom = pacingCustom
+        self.consecutiveNavActions = 0
         self.pendingIsStack = normalized.githubStrategy == .depthFirst
     }
 
@@ -207,13 +226,18 @@ public struct ChromeCrawlSession: Sendable {
         let urlChanged = !normalizedURL.isEmpty && normalizedURL != previousURL
 
         if let expected = awaitingNavigationTo {
+            let namePart = expected.replacingOccurrences(of: "name:", with: "")
             let expectedHit = !expected.isEmpty && (
                 expected == normalizedURL
                     || (!tabKey.isEmpty && expected == tabKey)
-                    || (!normalizedURL.isEmpty && normalizedURL.contains(expected.replacingOccurrences(of: "name:", with: "")))
+                    || (!normalizedURL.isEmpty && !namePart.isEmpty && normalizedURL.lowercased().contains(namePart))
             )
             if urlChanged || expectedHit {
                 stuckActivationCount = 0
+                markVisited(expected)
+                if urlChanged {
+                    visitedURLs.insert(normalizedURL)
+                }
             } else if !previousURL.isEmpty {
                 // Click did not leave the page — burn the target and prefer something else.
                 stuckActivationCount += 1
@@ -332,6 +356,27 @@ public struct ChromeCrawlSession: Sendable {
             return advanceAfterPageBudget()
         }
 
+        let maxConsecutive = PacingController.maxConsecutiveActions(
+            profile: pacing,
+            custom: pacingCustom
+        )
+        if PacingController.shouldForcePause(
+            consecutiveActions: consecutiveNavActions,
+            maxConsecutive: maxConsecutive
+        ) {
+            consecutiveNavActions = 0
+            let pause = PacingController.gapSeconds(
+                profile: pacing,
+                custom: pacingCustom,
+                context: .navigation(
+                    weight: pageReadWeight,
+                    candidates: pending.count,
+                    consecutive: maxConsecutive
+                )
+            )
+            return .wait(seconds: pause)
+        }
+
         if let started = pageStartedAt,
            now.timeIntervalSince(started) >= pageTimeBudgetSeconds
         {
@@ -347,40 +392,22 @@ public struct ChromeCrawlSession: Sendable {
             return advanceAfterPageBudget()
         }
 
-        // Already reviewed this page and nothing new remains → switch tab / yield.
+        // Already fully reviewed this page with nothing new → switch tab / yield (no re-key).
         if pending.isEmpty,
-           let snap = lastSnapshot,
-           !ChromeVisitKey.forPage(url: snap.url, title: snap.title).isEmpty,
-           visitedTargetKeys.isEmpty == false || visitedURLs.count > 1,
-           scrollsOnPage >= max(Self.minRevealKeys, pageKeyBudget / 2)
+           !currentURL.isEmpty,
+           completedPageKeys.contains(currentURL),
+           scrollsOnPage == 0
         {
+            lastRejection = "Already completed page — switching"
             return advanceAfterPageBudget()
         }
 
-        // 1) Navigate first — never key-traverse while unvisited targets remain.
-        if let snap = lastSnapshot, !snap.isEmpty {
-            if let next = dequeueNext() {
-                return activateCandidate(next, pageKind: snap.kind)
-            }
-
-            // 2) Pagination only when the page has no higher-priority pending targets.
-            let preferPagination = settings.crawlDocumentation
-                || settings.profile == .documentation
-                || snap.looksLikeDocumentation
-            if preferPagination {
-                if let nextPage = preferredPagination(in: snap) {
-                    let key = ChromeVisitKey.forElement(nextPage)
-                    if !key.isEmpty, !hasVisited(key), currentDepth < settings.maxDepth {
-                        return activateElement(nextPage, intent: .openPagination)
-                    }
-                }
-            }
-        }
-
-        // 3) Source / article review via keys — only after navigation queue is empty.
         let sourceBudget = sourceReviewKeyBudget()
+
+        // A) Source/blob: finish deliberate key-review before opening siblings.
         if readingSource, scrollsOnPage < sourceBudget {
             scrollsOnPage += 1
+            consecutiveNavActions = 0
             lastIntent = .scroll
             explorerState = .reviewingContent
             if scrollsOnPage % 2 == 0 {
@@ -389,21 +416,51 @@ public struct ChromeCrawlSession: Sendable {
             return .keyTraverse(nextReadMotion(preferPage: scrollsOnPage % 3 != 0))
         }
 
-        // Finished reading a source file with no siblings left → change file/tab.
         if readingSource {
+            // Review complete — mark page done, then allow siblings / tab hop.
+            if !currentURL.isEmpty {
+                completedPageKeys.insert(currentURL)
+            }
             return advanceAfterPageBudget()
         }
 
-        // 4) Brief key reveal, then leave for another tab/file — avoid repetitive loops.
+        // Tree/docs/general: navigate pending links first.
+        if let snap = lastSnapshot, !snap.isEmpty {
+            if let next = dequeueNext() {
+                consecutiveNavActions += 1
+                return activateCandidate(next, pageKind: snap.kind)
+            }
+
+            let preferPagination = settings.crawlDocumentation
+                || settings.profile == .documentation
+                || snap.looksLikeDocumentation
+            if preferPagination {
+                if let nextPage = preferredPagination(in: snap) {
+                    let key = ChromeVisitKey.forElement(nextPage)
+                    if !key.isEmpty, !hasVisited(key), currentDepth < settings.maxDepth {
+                        consecutiveNavActions += 1
+                        return activateElement(nextPage, intent: .openPagination)
+                    }
+                }
+            }
+        }
+
+        // Brief key reveal, then leave for another tab/file — avoid repetitive loops.
         let revealBudget = revealKeyBudget()
         if scrollsOnPage < revealBudget {
             scrollsOnPage += 1
+            consecutiveNavActions = 0
             lastIntent = .scroll
             explorerState = .scrollingContent
             if scrollsOnPage % 2 == 0 {
                 needsInspect = true
                 explorerState = .discoveringMore
-                return .wait(seconds: 0.35)
+                let pause = PacingController.gapSeconds(
+                    profile: pacing,
+                    custom: pacingCustom,
+                    context: .review(weight: pageReadWeight, scrolls: scrollsOnPage)
+                )
+                return .wait(seconds: min(1.2, max(0.35, pause * 0.45)))
             }
             return .keyTraverse(nextReadMotion(preferPage: true))
         }
@@ -422,20 +479,25 @@ public struct ChromeCrawlSession: Sendable {
 
     private mutating func refreshReadBudgets(for snap: WebPageSnapshot) {
         pageReadWeight = snap.estimatedReadWeight
-        let baseTime = settings.maxTimePerPageSeconds
-        pageTimeBudgetSeconds = min(1_800, max(20, baseTime * (0.55 + pageReadWeight)))
-        if readingSource || snap.kind == .githubBlob {
-            pageKeyBudget = Int(
-                (Double(Self.minSourceReviewKeys)
-                    + pageReadWeight * Double(Self.maxSourceReviewKeys - Self.minSourceReviewKeys)).rounded()
-            )
+        let reading = readingSource || snap.kind == .githubBlob || snap.kind == .documentation
+        pageTimeBudgetSeconds = PacingController.reviewDurationSeconds(
+            profile: pacing,
+            custom: pacingCustom,
+            weight: pageReadWeight,
+            dwellMaxSeconds: settings.maxTimePerPageSeconds
+        )
+        pageKeyBudget = PacingController.keyBudget(
+            profile: pacing,
+            custom: pacingCustom,
+            weight: pageReadWeight,
+            readingSource: reading,
+            maxScrollsCeiling: settings.maxScrollsPerPage
+        )
+        if reading {
+            pageKeyBudget = min(max(Self.minSourceReviewKeys, pageKeyBudget), Self.maxSourceReviewKeys)
         } else {
-            pageKeyBudget = Int(
-                (Double(Self.minRevealKeys)
-                    + pageReadWeight * Double(Self.maxRevealKeys - Self.minRevealKeys)).rounded()
-            )
+            pageKeyBudget = min(max(Self.minRevealKeys, pageKeyBudget), Self.maxRevealKeys)
         }
-        pageKeyBudget = min(settings.maxScrollsPerPage, max(Self.minRevealKeys, pageKeyBudget))
     }
 
     private func sourceReviewKeyBudget() -> Int {
@@ -447,17 +509,33 @@ public struct ChromeCrawlSession: Sendable {
     }
 
     private func nextReadMotion(preferPage: Bool) -> ChromeReadMotion {
-        if preferPage {
-            return Bool.random() ? .pageDown : .arrowDown(presses: Int.random(in: 2...5))
+        // Oscillate top ↔ mid ↔ bottom. Never End, never scroll-wheel.
+        // Phase on scrollsOnPage (0-based before increment already applied by caller).
+        let phase = max(0, scrollsOnPage - 1)
+        if phase == 0 {
+            return .home
         }
-        return .arrowDown(presses: Int.random(in: 1...3))
+        switch phase % 6 {
+        case 1:
+            return preferPage ? .pageDown : .arrowDown(presses: Int.random(in: 2...4))
+        case 2:
+            return .arrowDown(presses: Int.random(in: 1...3))
+        case 3:
+            return preferPage ? .pageUp : .arrowUp(presses: Int.random(in: 2...4))
+        case 4:
+            return .arrowUp(presses: Int.random(in: 1...3))
+        case 5:
+            return .pageDown
+        default:
+            return .pageUp
+        }
     }
 
     private mutating func activateCandidate(
         _ next: WebNavCandidate,
         pageKind: WebPageKind
     ) -> ChromeCrawlDecision {
-        markVisitedElement(next.element)
+        // Do not burn visit until URL change confirms success (see applySnapshot).
         awaitingNavigationTo = next.visitKey
         lastIntent = WebPageStrategySelector.intent(for: next, pageKind: pageKind)
         explorerState = .navigating
@@ -472,7 +550,6 @@ public struct ChromeCrawlSession: Sendable {
         _ element: WebNavElement,
         intent: ChromeNavigationIntent
     ) -> ChromeCrawlDecision {
-        markVisitedElement(element)
         awaitingNavigationTo = ChromeVisitKey.forElement(element)
         lastIntent = intent
         explorerState = .navigating
@@ -520,7 +597,7 @@ public struct ChromeCrawlSession: Sendable {
                 && WebLinkSafetyFilter.isActivatable(
                     element: $0,
                     currentURL: snap.url,
-                    policy: settings.domainPolicy
+                    policy: settings.domainPolicy(augmentingForURL: snap.url)
                 )
                 && !hasVisited(ChromeVisitKey.forElement($0))
         }
@@ -535,6 +612,9 @@ public struct ChromeCrawlSession: Sendable {
         if let next = dequeueNext() {
             let snapKind = lastSnapshot?.kind ?? .generic
             return activateCandidate(next, pageKind: snapKind)
+        }
+        if !currentURL.isEmpty {
+            completedPageKeys.insert(currentURL)
         }
         // Never use Chrome Back / Forward / toolbar. Hunt for another existing tab.
         if tabSwitchesAttempted < maxTabSwitches, pagesVisited < settings.maxPages {

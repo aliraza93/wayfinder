@@ -116,7 +116,14 @@ public struct WebPageSnapshot: Equatable, Sendable {
 
     /// Elements eligible for scored activation — page content only, never browser UI.
     public var allCandidates: [WebNavElement] {
-        (navigation + links + pagination + sections)
+        let navButtons = buttons.filter {
+            WebElementClassifier.isActivatable($0.classification)
+                || $0.classification == .internalNavigation
+                || $0.classification == .documentationLink
+                || $0.classification == .pagination
+                || $0.classification == .tableOfContents
+        }
+        return (navigation + links + pagination + sections + navButtons)
             .filter { $0.surface != .browserUI }
             .filter { $0.classification != .browserUI }
             .filter { WebElementClassifier.isActivatable($0.classification) || $0.classification == .unknown }

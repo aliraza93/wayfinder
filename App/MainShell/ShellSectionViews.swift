@@ -494,9 +494,9 @@ private struct DiscoveryConfigureStepView: View {
                         step: 5
                     )
 
-                    Picker("Navigation speed", selection: $session.discoverySpeed) {
-                        ForEach(NavigationSpeedPreset.allCases) { speed in
-                            Text(speed.title).tag(speed)
+                    Picker("Navigation Pacing", selection: $session.discoveryPacing) {
+                        ForEach(NavigationPacingProfile.allCases) { profile in
+                            Text(profile.title).tag(profile)
                         }
                     }
 
@@ -518,7 +518,7 @@ private struct DiscoveryConfigureStepView: View {
                     Text("Existing tabs stay open. Exploration uses page content only — never Chrome Back, Close, Omnibox, or toolbar.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                    Text("Inspect → understand → navigate (links / GitHub files / docs) → Page/Arrow keys to read (no scroll-wheel). Longer pages stay open longer.")
+                    Text("Inspect → understand → navigate (menus / GitHub files / docs) → Page/Arrow keys oscillate top ↔ bottom. Longer pages stay longer. Already-visited tabs are skipped when possible.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Text("Default: same-domain · depth \(ChromeNavigationSettings.default.maxDepth) · max \(ChromeNavigationSettings.default.maxPages) pages per tab.")
